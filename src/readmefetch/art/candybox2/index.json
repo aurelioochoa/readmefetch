@@ -1,0 +1,17 @@
+{
+  "source": "https://github.com/candybox2/candybox2.github.io/tree/35301d438aa2c1e58e8cb3ea215b0af323bddf9b/ascii",
+  "license": "CC BY-SA 3.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+  "logos": {
+    "cauldron": {
+      "file": "cauldron.txt",
+      "path": "ascii/places/cauldron/cauldron.txt",
+      "author": "dixsept"
+    },
+    "computer": {
+      "file": "computer.txt",
+      "path": "ascii/general/theComputer/computer.txt",
+      "author": "aniwey"
+    }
+  }
+}

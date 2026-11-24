@@ -1,0 +1,27 @@
+# The config behind examples/demo.svg and demo.gif.
+user = "dev"
+host = "readmefetch"
+command = "neofetch"
+theme = "github-dark"
+logos = ["tux", "drone", "computer", "cauldron", "banner", "python"]
+seconds_per_logo = 4.5
+output = "demo.svg"
+uptime_since = 2019-03-14
+
+info = [
+  "OS: Full-stack Developer",
+  "Host: Somewhere with good coffee",
+  "Uptime: {uptime}",
+  "Shell: zsh",
+  "",
+  "Web: TypeScript · React · Svelte",
+  "Backend: Python · Go · PostgreSQL",
+  "Ops: Linux · Docker · GitHub Actions",
+  "",
+  "Now: building readmefetch",
+  "Contact: dev@example.com",
+]
+
+[banner]
+text = "hello"
+font = "slant"

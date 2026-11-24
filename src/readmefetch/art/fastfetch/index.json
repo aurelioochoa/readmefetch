@@ -1,0 +1,170 @@
+{
+  "source": "https://github.com/fastfetch-cli/fastfetch/tree/e09925d303dfc1d3cb35b977017d65c9c1704366/src/logo/ascii",
+  "logos": {
+    "linux": {
+      "file": "linux.txt",
+      "colors": [
+        "white",
+        "bright-black",
+        "yellow"
+      ],
+      "keys": "fg",
+      "title": "yellow"
+    },
+    "arch": {
+      "file": "arch.txt",
+      "colors": [
+        "cyan",
+        "cyan"
+      ]
+    },
+    "debian": {
+      "file": "debian.txt",
+      "colors": [
+        "red",
+        "white"
+      ],
+      "keys": "red",
+      "title": "red"
+    },
+    "ubuntu": {
+      "file": "ubuntu.txt",
+      "colors": [
+        "red",
+        "red"
+      ]
+    },
+    "fedora": {
+      "file": "fedora.txt",
+      "colors": [
+        "blue",
+        "white"
+      ],
+      "keys": "blue",
+      "title": "fg"
+    },
+    "macos": {
+      "file": "macos.txt",
+      "colors": [
+        "green",
+        "yellow",
+        "bright-red",
+        "red",
+        "magenta",
+        "blue"
+      ],
+      "keys": "yellow",
+      "title": "green"
+    },
+    "windows": {
+      "file": "windows_11.txt",
+      "colors": [
+        "blue",
+        "blue",
+        "blue",
+        "blue"
+      ],
+      "keys": "yellow",
+      "title": "cyan"
+    },
+    "nixos": {
+      "file": "nixos.txt",
+      "colors": [
+        "blue",
+        "cyan",
+        "blue",
+        "cyan",
+        "blue",
+        "cyan"
+      ]
+    },
+    "raspbian": {
+      "file": "raspbian.txt",
+      "colors": [
+        "red",
+        "green"
+      ],
+      "keys": "red",
+      "title": "green"
+    },
+    "android": {
+      "file": "android.txt",
+      "colors": [
+        "green",
+        "white"
+      ],
+      "keys": "green",
+      "title": "green"
+    },
+    "mint": {
+      "file": "linuxmint.txt",
+      "colors": [
+        "green",
+        "white"
+      ],
+      "keys": "green",
+      "title": "green"
+    },
+    "pop": {
+      "file": "pop.txt",
+      "colors": [
+        "cyan",
+        "white"
+      ],
+      "keys": "cyan",
+      "title": "cyan"
+    },
+    "kali": {
+      "file": "kali.txt",
+      "colors": [
+        "blue",
+        "bright-black"
+      ],
+      "keys": "blue",
+      "title": "fg"
+    },
+    "gentoo": {
+      "file": "gentoo.txt",
+      "colors": [
+        "magenta",
+        "white"
+      ],
+      "keys": "magenta",
+      "title": "magenta"
+    },
+    "manjaro": {
+      "file": "manjaro.txt",
+      "colors": [
+        "green"
+      ],
+      "keys": "green",
+      "title": "green"
+    },
+    "freebsd": {
+      "file": "freebsd.txt",
+      "colors": [
+        "white",
+        "red"
+      ],
+      "keys": "red",
+      "title": "red"
+    },
+    "alpine": {
+      "file": "alpine.txt",
+      "colors": [
+        "blue"
+      ],
+      "keys": "magenta",
+      "title": "blue"
+    },
+    "opensuse": {
+      "file": "opensuse.txt",
+      "colors": [
+        "green",
+        "white"
+      ],
+      "keys": "green",
+      "title": "green"
+    }
+  }
+}

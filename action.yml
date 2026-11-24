@@ -1,0 +1,86 @@
+name: readmefetch
+description: Render your profile README as an animated, neofetch-style terminal (SVG, optionally GIF)
+author: Aurelio Ochoa
+branding:
+  icon: terminal
+  color: blue
+
+inputs:
+  config:
+    description: Path to readmefetch.toml
+    default: readmefetch.toml
+  output:
+    description: SVG path (default: `output` in the config)
+    default: ""
+  gif:
+    description: Also export a GIF next to the SVG ("true" or "false")
+    default: "false"
+  token:
+    description: Token used for {repos}, {stars}, {followers} and {contributions}
+    default: ${{ github.token }}
+  commit:
+    description: Commit and push the rendered files when they change ("true" or "false")
+    default: "true"
+  commit-message:
+    description: Commit message
+    default: "chore: update readmefetch [skip ci]"
+
+outputs:
+  files:
+    description: Files that were written, one per line
+    value: ${{ steps.render.outputs.files }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install Pillow for GIF export
+      if: inputs.gif == 'true'
+      shell: bash
+      run: python -m pip install --quiet "pillow>=10"
+
+    - name: Render
+      id: render
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        PYTHONPATH: ${{ github.action_path }}/src
+        RF_CONFIG: ${{ inputs.config }}
+        RF_OUTPUT: ${{ inputs.output }}
+        RF_GIF: ${{ inputs.gif }}
+      run: |
+        args=(--config "$RF_CONFIG")
+        [ -n "$RF_OUTPUT" ] && args+=(--output "$RF_OUTPUT")
+        files=$(python -m readmefetch render "${args[@]}")
+        if [ "$RF_GIF" = "true" ]; then
+          gif_args=(--config "$RF_CONFIG")
+          [ -n "$RF_OUTPUT" ] && gif_args+=(--output "${RF_OUTPUT%.*}.gif")
+          files="$files"$'\n'"$(python -m readmefetch gif "${gif_args[@]}")"
+        fi
+        {
+          echo "files<<READMEFETCH_EOF"
+          echo "$files"
+          echo "READMEFETCH_EOF"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Commit
+      if: inputs.commit == 'true'
+      shell: bash
+      env:
+        RF_FILES: ${{ steps.render.outputs.files }}
+        RF_MESSAGE: ${{ inputs.commit-message }}
+      run: |
+        mapfile -t files <<< "$RF_FILES"
+        git add -- "${files[@]}"
+        if git diff --cached --quiet; then
+          echo "readmefetch: nothing changed"
+          exit 0
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git commit -m "$RF_MESSAGE"
+        git pull --rebase --autostash
+        git push

@@ -1,0 +1,188 @@
+{
+  "source": "https://github.com/o2sh/onefetch/blob/8b63584a505a3225ff85dc7144c910eb48f5c12a/languages.yaml",
+  "logos": {
+    "python": {
+      "file": "python.txt",
+      "language": "Python",
+      "colors": [
+        "#2F69A2",
+        "#FFD940"
+      ]
+    },
+    "javascript": {
+      "file": "javascript.txt",
+      "language": "JavaScript",
+      "colors": [
+        "#ECE653"
+      ]
+    },
+    "typescript": {
+      "file": "typescript.txt",
+      "language": "TypeScript",
+      "colors": [
+        "#007ACC",
+        "#FFFFFF"
+      ]
+    },
+    "php": {
+      "file": "php.txt",
+      "language": "Php",
+      "colors": [
+        "#777BB3",
+        "#FFFFFF"
+      ]
+    },
+    "java": {
+      "file": "java.txt",
+      "language": "Java",
+      "colors": [
+        "#F44336",
+        "#1665C0"
+      ]
+    },
+    "lua": {
+      "file": "lua.txt",
+      "language": "Lua",
+      "colors": [
+        "#134074",
+        "#FFFFFF"
+      ]
+    },
+    "rust": {
+      "file": "rust.txt",
+      "language": "Rust",
+      "colors": [
+        "#E43717",
+        "#FFFFFF"
+      ]
+    },
+    "go": {
+      "file": "go.txt",
+      "language": "Go",
+      "colors": [
+        "#74CDDD",
+        "#FFFFFF",
+        "#F6D2A2"
+      ]
+    },
+    "html": {
+      "file": "html.txt",
+      "language": "Html",
+      "colors": [
+        "red",
+        "white"
+      ]
+    },
+    "css": {
+      "file": "css.txt",
+      "language": "Css",
+      "colors": [
+        "blue",
+        "white"
+      ]
+    },
+    "sass": {
+      "file": "sass.txt",
+      "language": "Sass",
+      "colors": [
+        "#CD6799"
+      ]
+    },
+    "vue": {
+      "file": "vue.txt",
+      "language": "Vue",
+      "colors": [
+        "green",
+        "blue"
+      ]
+    },
+    "c": {
+      "file": "c.txt",
+      "language": "C",
+      "colors": [
+        "#649AD2",
+        "#004283",
+        "#00599D",
+        "#FFFFFF"
+      ]
+    },
+    "cpp": {
+      "file": "cpp.txt",
+      "language": "Cpp",
+      "colors": [
+        "#649AD2",
+        "#004283",
+        "#00599D",
+        "#FFFFFF"
+      ]
+    },
+    "csharp": {
+      "file": "csharp.txt",
+      "language": "CSharp",
+      "colors": [
+        "#9B4F97",
+        "#67217A",
+        "#803788",
+        "#FFFFFF"
+      ]
+    },
+    "ruby": {
+      "file": "ruby.txt",
+      "language": "Ruby",
+      "colors": [
+        "#F30301"
+      ]
+    },
+    "kotlin": {
+      "file": "kotlin.txt",
+      "language": "Kotlin",
+      "colors": [
+        "blue",
+        "yellow",
+        "magenta"
+      ]
+    },
+    "swift": {
+      "file": "swift.txt",
+      "language": "Swift",
+      "colors": [
+        "#F88134",
+        "#F97732",
+        "#F96D30",
+        "#FA632E",
+        "#FA592C",
+        "#FB502A",
+        "#FB4628",
+        "#FC3C26",
+        "#FC3224",
+        "#FD2822"
+      ]
+    },
+    "dart": {
+      "file": "dart.txt",
+      "language": "Dart",
+      "colors": [
+        "#00A3E7",
+        "#42DFCD",
+        "#01597D"
+      ]
+    },
+    "bash": {
+      "file": "bash.txt",
+      "language": "Bash",
+      "colors": [
+        "white",
+        "green"
+      ]
+    },
+    "docker": {
+      "file": "docker.txt",
+      "language": "Dockerfile",
+      "colors": [
+        "cyan",
+        "white",
+        "cyan"
+      ]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-"""Command line: readmefetch [init|render|print|logos|themes]."""
+"""Command line: readmefetch [init|render|gif|print|web|logos|themes]."""
 
 import argparse
 import datetime as dt
@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import HOMEPAGE, __version__, config, logos, stats, svg, term
+from . import HOMEPAGE, __version__, badges, config, logos, stats, svg, term
 from .themes import THEMES, palette
 
 
@@ -21,13 +21,38 @@ def _context(args):
     return cfg, config.info_rows(cfg, vals), palette(cfg.theme, cfg.colors)
 
 
+def write_badges(cfg, pal) -> list[Path]:
+    paths = []
+    if cfg.badges:
+        cfg.badge_dir.mkdir(parents=True, exist_ok=True)
+    for b in cfg.badges:
+        path = cfg.badge_dir / b.file
+        path.write_text(badges.render(b, pal), encoding="utf-8")
+        paths.append(path)
+    return paths
+
+
 def cmd_render(args) -> int:
     cfg, rows, pal = _context(args)
     out = Path(args.output) if args.output else (cfg.path.parent / cfg.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(svg.render(cfg, rows, cfg.load_logos(), pal)[0], encoding="utf-8")
-    print(f"readmefetch: wrote {out}", file=sys.stderr)
-    print(out)
+    written = [out] + write_badges(cfg, pal)
+    print(f"readmefetch: wrote {out}" + (f" and {len(written) - 1} badge(s) in {cfg.badge_dir}" if len(written) > 1 else ""),
+          file=sys.stderr)
+    print("\n".join(str(p) for p in written))
+    return 0
+
+
+def cmd_badges(args) -> int:
+    cfg = config.load(args.config)
+    if not cfg.badges:
+        print("readmefetch: no [[badge]] tables in the config; see `readmefetch badges --help`", file=sys.stderr)
+        return 1
+    pal = palette(cfg.theme, cfg.colors)
+    paths = write_badges(cfg, pal)
+    print(f"readmefetch: wrote {len(paths)} badge(s) in {cfg.badge_dir}. Paste this into your README:\n", file=sys.stderr)
+    sys.stdout.write(badges.snippet(cfg.badges, cfg.badge_defaults["dir"], html=args.html))
     return 0
 
 
@@ -91,6 +116,12 @@ def cmd_themes(args) -> int:
         swatch = "".join(f"{term.bg(pal[p + c])}  " for p in ("", "bright-") for c in names) + term.RESET if color else ""
         print(f"{name:<18} {swatch}")
     return 0
+
+
+def cmd_web(args) -> int:
+    from . import web
+
+    return web.serve(Path(args.config), port=args.port, open_browser=args.open, verbose=args.verbose)
 
 
 def cmd_init(args) -> int:
@@ -162,6 +193,20 @@ def build_parser() -> argparse.ArgumentParser:
     colour(sp)
     sp.add_argument("--logo", help="show this logo instead of the first one")
     sp.set_defaults(func=cmd_print)
+
+    sp = sub.add_parser("badges", help="write the [[badge]] SVGs and print the README lines that show them",
+                        description="Badges are [[badge]] tables in the config (label, message, link, color, icon, style); "
+                                    f"styles: {', '.join(badges.STYLES)}; icons: {', '.join(badges.ICONS)} or a 24x24 SVG path.")
+    common(sp, stats_opt=False)
+    sp.add_argument("--html", action="store_true", help="print <a><img></a> HTML instead of Markdown")
+    sp.set_defaults(func=cmd_badges)
+
+    sp = sub.add_parser("web", help="edit the config in a local web app with a live preview")
+    common(sp, stats_opt=False)
+    sp.add_argument("--port", type=int, default=8765, help="port on 127.0.0.1 (default: %(default)s; 0 picks a free one)")
+    sp.add_argument("--open", action="store_true", help="open it in your browser")
+    sp.add_argument("--verbose", action="store_true", help="log every request")
+    sp.set_defaults(func=cmd_web)
 
     sp = sub.add_parser("logos", help="list built-in logos, or preview some")
     sp.add_argument("names", nargs="*")

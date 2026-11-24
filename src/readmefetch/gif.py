@@ -110,7 +110,7 @@ class Browser:
 
 def capture(svg_path: Path, width: int, height: int, times: list[float], scale: float = 1.0) -> list:
     """PNG frames (as Pillow images) of the SVG at each time, in seconds."""
-    Image = _pillow()
+    Image = _pillow()  # noqa: N806 (the PIL module's own name)
     browser = Browser(find_browser())
     try:
         target = browser.call("Target.createTarget", {"url": "about:blank"})["targetId"]
@@ -150,7 +150,7 @@ def flatness(img) -> float:
 
 
 def write_gif(frames: list, path: Path, fps: float) -> None:
-    Image = _pillow()
+    Image = _pillow()  # noqa: N806 (the PIL module's own name)
     # one shared palette for every frame (no colour flicker), index 255 kept for transparency
     sample = frames[:: max(1, len(frames) // 12)]
     sheet = Image.new("RGB", (sample[0].width, sample[0].height * len(sample)))

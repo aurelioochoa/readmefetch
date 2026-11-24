@@ -19,6 +19,14 @@ travels with the picture. Please keep it if you share an SVG.
 Third-party files are copied byte for byte from the pinned commits above by
 [`tools/vendor_art.py`](tools/vendor_art.py), so anyone can check them against upstream.
 
+## Badges
+
+The badge icons (`globe`, `mail`, `game`, `cards`, `tree` and the rest) are original
+drawings made for readmefetch, under its MIT licence. The badge shapes follow the common
+shields.io styles. The gradients of `flat` and `plastic` use the same stop values as
+[shields.io's badge-maker](https://github.com/badges/shields/tree/master/badge-maker)
+(CC0-1.0). Text widths come from Verdana's advance widths at 11 px.
+
 ## Share-alike art
 
 The Candy Box 2 pieces are CC BY-SA 3.0, not MIT. An SVG or GIF that shows `cauldron`

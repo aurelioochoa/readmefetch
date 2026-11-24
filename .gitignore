@@ -3,3 +3,13 @@ __pycache__/
 build/
 dist/
 .venv/
+.ruff_cache/
+*.bak
+
+# What `readmefetch init` and `make` write in the checkout itself
+/readmefetch.toml
+/readmefetch.svg
+/readmefetch.gif
+/badges/
+/demo.svg
+/demo.gif

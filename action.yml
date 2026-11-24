@@ -1,5 +1,5 @@
 name: readmefetch
-description: Render your profile README as an animated, neofetch-style terminal (SVG, optionally GIF)
+description: Render your profile README as an animated, neofetch-style terminal (SVG and badges, optionally GIF)
 author: Aurelio Ochoa
 branding:
   icon: terminal
@@ -19,7 +19,7 @@ inputs:
     description: Token used for {repos}, {stars}, {followers} and {contributions}
     default: ${{ github.token }}
   commit:
-    description: Commit and push the rendered files when they change ("true" or "false")
+    description: Commit and push the rendered files (SVG, badges, GIF) when they change ("true" or "false")
     default: "true"
   commit-message:
     description: Commit message

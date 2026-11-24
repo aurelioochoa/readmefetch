@@ -25,7 +25,7 @@ class Font:
     def credit(self) -> str:
         first = self.comment.splitlines()[0].strip() if self.comment else self.name
         if self.name == "tubes":
-            return f"FIGlet font Tubes by Phantomwise (CC0 1.0)"
+            return "FIGlet font Tubes by Phantomwise (CC0 1.0)"
         return f"FIGlet font {self.name}: {first}; {FIGLET_COPYRIGHT}"
 
 

@@ -56,7 +56,8 @@ def fetch(user: str, needed: set[str]) -> dict:
                   file=sys.stderr)
             out["contributions"] = "?"
         else:
-            q = "query($login: String!) { user(login: $login) { contributionsCollection { contributionCalendar { totalContributions } } } }"
+            q = ("query($login: String!) { user(login: $login) "
+                 "{ contributionsCollection { contributionCalendar { totalContributions } } } }")
             d = _call(f"{API}/graphql", tok, {"query": q, "variables": {"login": user}})
             if d.get("errors"):
                 raise RuntimeError(d["errors"][0].get("message", "GraphQL error"))

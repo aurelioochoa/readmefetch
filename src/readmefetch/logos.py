@@ -397,37 +397,84 @@ def catalog() -> list[tuple[str, str]]:
     return out
 
 
+CUSTOM_KEYS = {"art", "colors", "ground", "layers", "enter", "hover", "accent", "credit"}
+OVERRIDE_KEYS = {"enter", "hover", "accent", "animate"}
+LAYER_KEYS = {"row", "col", "frames", "weights", "period"}
+
+
+def _art(text: str) -> str:
+    """Art as written in TOML: the newline before the closing \'\'\' goes, leading blank rows stay."""
+    return text.rstrip("\n")
+
+
 def custom(name: str, spec: dict) -> Logo:
     """A logo defined in the config file under [logo.<name>]."""
+    unknown = set(spec) - CUSTOM_KEYS
+    if unknown:
+        raise ValueError(f"[logo.{name}] unknown setting(s): {', '.join(sorted(unknown))}")
     colors = spec.get("colors", ["accent"])
     if isinstance(colors, str):
         colors = [colors]
-    if "art" not in spec:
+    colors = [str(c) for c in colors] or ["accent"]
+    if not isinstance(spec.get("art"), str) or not spec["art"].strip():
         raise ValueError(f"[logo.{name}] needs an `art` string")
     enter = spec.get("enter", "print")
     if enter not in ENTERS:
         raise ValueError(f"[logo.{name}] enter must be one of {', '.join(ENTERS)}")
     layers = []
-    for i, ls in enumerate(spec.get("layers", [])):
-        frames = [parse_dollar(f.strip("\n"), colors) for f in ls.get("frames", [])]
+    for i, ls in enumerate(spec.get("layers") or []):
+        unknown = set(ls) - LAYER_KEYS
+        if unknown:
+            raise ValueError(f"[logo.{name}] layer {i + 1}: unknown setting(s) {', '.join(sorted(unknown))}")
+        frames = [parse_dollar(_art(f), colors) for f in ls.get("frames", [])]
         if not frames:
             raise ValueError(f"[logo.{name}] layer {i + 1} has no frames")
         weights = ls.get("weights", [1] * len(frames))
         if len(weights) != len(frames):
             raise ValueError(f"[logo.{name}] layer {i + 1}: weights and frames differ in length")
+        if any(float(w) <= 0 for w in weights) or float(ls.get("period", 1.0)) <= 0:
+            raise ValueError(f"[logo.{name}] layer {i + 1}: weights and period must be above 0")
         layers.append(Layer(int(ls.get("row", 0)), int(ls.get("col", 0)), frames, [float(w) for w in weights],
                             float(ls.get("period", 1.0))))
+    if any(layer.row < 0 or layer.col < 0 for layer in layers):
+        raise ValueError(f"[logo.{name}] layer row and col can't be negative")
     return Logo(
         name=name,
-        art=parse_dollar(spec["art"].strip("\n"), colors),
-        accent=spec.get("accent", colors[0]),
-        ground=parse_dollar(spec.get("ground", "").strip("\n"), colors) if spec.get("ground") else [],
+        art=parse_dollar(_art(spec["art"]), colors),
+        accent=str(spec.get("accent", colors[0])),
+        ground=parse_dollar(_art(spec["ground"]), colors) if spec.get("ground") else [],
         layers=layers,
         enter=enter,
         hover=bool(spec.get("hover", False)),
         source="custom",
-        credit=spec.get("credit", ""),
+        credit=str(spec.get("credit", "")),
     )
+
+
+def override(logo: Logo, spec: dict) -> Logo:
+    """[logo.<built-in name>] without `art`: change how a built-in logo moves. Its credit can't change."""
+    unknown = set(spec) - OVERRIDE_KEYS
+    if unknown:
+        hint = " (to draw your own, give it a new name)" if unknown & CUSTOM_KEYS else ""
+        raise ValueError(f"[logo.{logo.name}] can only change {', '.join(sorted(OVERRIDE_KEYS))} of a built-in "
+                         f"logo{hint}; unknown: {', '.join(sorted(unknown))}")
+    if "enter" in spec:
+        if spec["enter"] not in ENTERS:
+            raise ValueError(f"[logo.{logo.name}] enter must be one of {', '.join(ENTERS)}")
+        logo.enter = spec["enter"]
+    if "hover" in spec:
+        logo.hover = bool(spec["hover"])
+    if "accent" in spec:
+        logo.accent = str(spec["accent"])
+    if spec.get("animate") is False:
+        logo.art = logo.still()[: logo.art_rows]  # freeze every layer on its first frame
+        logo.layers = []
+    return logo
+
+
+def builtin(name: str) -> bool:
+    key = name.strip().lower()
+    return key in ORIGINALS or key in VENDORED_EXTRAS or key in _index("fastfetch") or key in _index("onefetch")
 
 
 def load(name: str, ctx: dict | None = None) -> Logo:
@@ -435,14 +482,39 @@ def load(name: str, ctx: dict | None = None) -> Logo:
     ctx = ctx or {}
     customs = ctx.get("customs") or {}
     key = name.strip().lower()
-    if name in customs:
-        return custom(name, customs[name])
+    spec = customs.get(name)
+    if spec is not None and ("art" in spec or not builtin(name)):
+        return custom(name, spec)
     if key in ORIGINALS:
-        return ORIGINALS[key](ctx)
-    if key in VENDORED_EXTRAS:
-        return VENDORED_EXTRAS[key](ctx)
-    if key in _index("fastfetch"):
-        return _fastfetch(key)
-    if key in _index("onefetch"):
-        return _onefetch(key)
-    raise ValueError(f"unknown logo {name!r}; run `readmefetch logos` to list them")
+        logo = ORIGINALS[key](ctx)
+    elif key in VENDORED_EXTRAS:
+        logo = VENDORED_EXTRAS[key](ctx)
+    elif key in _index("fastfetch"):
+        logo = _fastfetch(key)
+    elif key in _index("onefetch"):
+        logo = _onefetch(key)
+    else:
+        raise ValueError(f"unknown logo {name!r}; run `readmefetch logos` to list them")
+    return override(logo, spec) if spec is not None else logo
+
+
+def to_dollar(grid: Grid, max_colors: int = 9) -> tuple[str, list[str]]:
+    """A grid back in fastfetch syntax: (text, colours). Colours past the ninth reuse the last one."""
+    colors: list[str] = []
+    lines, current = [], None
+    for row in grid:
+        parts = []
+        for cell in row:
+            if cell is None:
+                parts.append(" ")
+                continue
+            ch, color = cell
+            if color not in colors and len(colors) < max_colors:
+                colors.append(color)
+            idx = colors.index(color) if color in colors else len(colors) - 1
+            if colors[idx] != current:
+                parts.append(f"${idx + 1}")
+                current = colors[idx]
+            parts.append("$$" if ch == "$" else ch)
+        lines.append("".join(parts).rstrip())
+    return "\n".join(lines), colors

@@ -233,6 +233,7 @@ class Cli(unittest.TestCase):
 def _gif_tools() -> bool:
     try:
         import PIL  # noqa: F401
+
         from readmefetch.gif import find_browser
         find_browser()
         return os.name == "posix"

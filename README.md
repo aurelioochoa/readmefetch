@@ -1,17 +1,27 @@
 # readmefetch
 
-Your GitHub profile README as an animated terminal running `neofetch`.
+Your GitHub profile README as an animated, neofetch-style terminal.
 
-<p align="center"><img src="examples/demo.svg" alt="A terminal types neofetch and prints a profile next to logos that take turns: Tux, a flying drone, a computer, a cauldron, a text banner and the Python logo" width="100%"></p>
+<p align="center"><img src="examples/demo.svg" alt="A terminal types readmefetch and its output types itself in, line by line at different speeds: a profile next to logos that take turns: Tux, a flying drone, a computer, a cauldron, a text banner and the Python logo" width="100%"></p>
 
-The command types itself out and the profile prints line by line. Logos take turns
-beside it: a drone flies in with spinning rotors, Tux blinks, a cauldron boils, a
-computer types a shell session, and the info keys change colour to match each logo.
-After that, the cursor keeps blinking.
+<p align="center">
+<a href="https://example.com"><img src="examples/badges/website.svg" alt="Website: example.com"></a>
+<a href="mailto:dev@example.com"><img src="examples/badges/email.svg" alt="Email: dev@example.com"></a>
+<a href="https://example.com/blog"><img src="examples/badges/blog.svg" alt="Blog: posts"></a>
+<a href="https://example.com/games"><img src="examples/badges/games.svg" alt="Games: play"></a>
+<a href="https://example.com/sponsor"><img src="examples/badges/sponsor.svg" alt="Sponsor: thanks"></a>
+<a href="https://github.com/aurelioochoa/readmefetch"><img src="examples/badges/terminal.svg" alt="readmefetch: --help"></a>
+</p>
+
+When someone opens your profile, `readmefetch` types itself at the prompt and the output
+types itself in, each line at its own speed. Then the logos take turns: a drone flies in
+with spinning rotors, Tux blinks, a cauldron boils, a computer types a shell session,
+and the info keys change colour to match each logo. The cursor keeps blinking.
 
 It's a single SVG with CSS animations, which GitHub plays in READMEs. It has no
 scripts and loads no fonts. readmefetch can also print the same thing in your
-terminal or export it as a GIF.
+terminal, export it as a GIF, and make matching badges for your links (above). A local
+web editor shows every setting with a live preview.
 
 ## Quick start
 
@@ -19,13 +29,14 @@ terminal or export it as a GIF.
 pipx install git+https://github.com/aurelioochoa/readmefetch   # or: pip install git+https://...
 readmefetch init --github YOUR_USERNAME   # writes readmefetch.toml from your public profile
 readmefetch print                         # preview in the terminal
-readmefetch render                        # writes readmefetch.svg
+readmefetch render                        # writes readmefetch.svg (and your badges)
+readmefetch web --open                    # or edit everything in the browser
 ```
 
 Put the SVG in your profile README (the repository named after your username):
 
 ```html
-<img src="readmefetch.svg" alt="neofetch-style summary of my profile" width="100%">
+<img src="readmefetch.svg" alt="A terminal runs readmefetch: a summary of my profile" width="100%">
 ```
 
 Python 3.11 or newer is required. There are no other dependencies, except for GIF export.
@@ -54,7 +65,7 @@ jobs:
         #   gif: "true"        # also export readmefetch.gif
 ```
 
-The action renders the image and commits it only when it changed.
+The action renders the image and your badges, and commits them only when they changed.
 
 ## GIF export
 
@@ -71,6 +82,24 @@ time, so the frames are deterministic. Set `READMEFETCH_BROWSER` if your browser
 found automatically. GitHub's Ubuntu runners already have Chrome. GIF export works on
 Linux and macOS.
 
+## The web editor
+
+```sh
+readmefetch web --open                 # edits ./readmefetch.toml on http://127.0.0.1:8765
+readmefetch web -c path/to/readmefetch.toml --port 0   # any free port
+make web                               # the same, from a checkout
+```
+
+A small local app in GitHub's look: every setting, with the README preview updating as
+you type, light and dark pages, a Replay button for the intro, a logo picker with
+thumbnails, a badge builder and a **Draw** tab for your own logo. You can type or paint
+in colour, add frames, paste ASCII art or start from a built-in logo. Then
+download the SVG, the config, a GIF or the README and workflow snippets. **Save**
+writes the config (the old one is kept as `readmefetch.toml.bak`), the SVG and the badges.
+
+The server uses only Python's standard library and listens on 127.0.0.1. It refuses
+requests from other sites, and other hosts can't reach it.
+
 ## Configuration
 
 `readmefetch init` writes a commented `readmefetch.toml`. Every setting:
@@ -78,7 +107,8 @@ Linux and macOS.
 | Setting | Default | |
 | --- | --- | --- |
 | `user`, `host` | `"user"`, `"github"` | shown as `user@host` in the prompt, title bar and info header |
-| `command` | `"neofetch"` | what gets typed |
+| `cwd` | `"~"` | the directory in the prompt and title bar |
+| `command` | `"readmefetch"` | what gets typed |
 | `theme` | `"github-dark"` | `github-dark`, `github-light`, `dracula`, `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `nord` (`readmefetch themes`) |
 | `logos` | `["tux"]` | logos shown in turn; `readmefetch logos` lists them |
 | `seconds_per_logo` | `5` | how long each logo stays |
@@ -90,7 +120,27 @@ Linux and macOS.
 | `output` | `"readmefetch.svg"` | relative to the config file |
 | `[colors]` | | override theme colours: `accent`, `bg`, `fg`, `dim`, `red`, `bright-blue`, ... |
 | `[banner]` | | `text` (default `user`), `font` (`standard`, `slant`, `small`, `smslant`, `big`, `tubes`), `colors` (list), `wave` (`true`) |
-| `[logo.NAME]` | | a custom logo (see below) |
+| `[intro]` | | how the output appears on a visit (see below) |
+| `[cursor]` | | `style` (`block`, `bar`, `underline`), `blink` (`true`), `period` (`1.1` s), `color` (`"fg"`) |
+| `[prompt]` | | `format` (`"{user}@{host}:{cwd}$ "`), `user_color` (`"green"`), `cwd_color` (`"blue"`) |
+| `[window]` | | `title` (`"{user}@{host}: {cwd}"`, `""` for none), `buttons` (`true`: the three dots) |
+| `[logo.NAME]` | | a custom logo, or settings for a built-in one (see below) |
+| `[badges]`, `[[badge]]` | | badges for your links (see below) |
+
+**The intro** runs once, when someone opens the page:
+
+```toml
+[intro]
+scope = "all"              # none: lines fade in · info: the info types in · all: the logo too
+direction = "left-to-right"  # right-to-left, top-to-bottom, bottom-to-top
+# speed = 50               # cells per second (default 50 across, 24 down)
+variance = 0.5             # each line runs at speed × (1 ± variance), so they finish at different times
+# stagger = 0.08           # seconds between one line starting and the next
+seed = 1                   # change it to shuffle the speeds
+command_speed = 12.5       # characters per second for the command
+```
+
+With `scope = "all"` the first logo is typed in, so it skips its usual entrance once.
 
 **Info lines.** `"Key: value"` prints the key in the logo's colour, a line without a
 `Key: ` prefix prints as plain text, and `""` leaves a blank line. Placeholders:
@@ -145,8 +195,65 @@ frames = ["$2hi!", "$2yo!"]
 weights = [3, 1]       # relative time each frame stays
 ```
 
+A `[logo.NAME]` table without `art` adjusts a built-in logo instead:
+
+```toml
+[logo.tux]
+enter = "fly"     # print, fly or fade
+hover = true
+accent = "bright-yellow"
+animate = false   # a still Tux: no blinking
+```
+
 Where to find more art, and the terms that come with it, is in
 [CREDITS.md](CREDITS.md#finding-more-art).
+
+## Badges
+
+Badges are small SVG buttons for your sites, projects and contact details. They match the
+terminal, and you own the files. List them in the config:
+
+```toml
+[badges]                   # defaults for every badge
+style = "for-the-badge"
+dir = "assets/badges"      # relative to the config file
+
+[[badge]]
+label = "Portfolio"
+message = "example.com"
+link = "https://example.com"
+color = "#00d4ff"          # a theme colour name or #hex
+icon = "globe"
+
+[[badge]]
+label = "Email"
+message = "me@example.com"
+link = "mailto:me@example.com"
+color = "red"
+icon = "mail"
+style = "terminal"         # per-badge style
+```
+
+```sh
+readmefetch badges          # writes the SVGs and prints the README lines that show them
+readmefetch badges --html   # the same lines as <a><img></a>, for inside <p align="center">
+```
+
+`readmefetch render` and the Action write them too.
+
+- **Styles:** `flat`, `flat-square`, `plastic`, `for-the-badge` and `pill` have the familiar
+  badge shapes. `terminal` is a tiny prompt in your theme with a blinking cursor (it stays
+  still for visitors who prefer reduced motion). The demo above shows one of each.
+- **Settings:** `label`, `message`, `link`, `color`, `label_color` (default grey),
+  `icon`, `style`, `file` (default: from the label) and `cursor` (terminal style only).
+- **Text:** it picks white or near-black, whichever reads better on the colour. Widths come
+  from a Verdana width table and are pinned with `textLength`, so a badge keeps its shape
+  whatever fonts the viewer has.
+- **Icons:** `globe`, `mail`, `link`, `code`, `terminal`, `game`, `cards`, `tree`,
+  `briefcase`, `heart`, `star`, `home`, `rocket` and `book` are readmefetch's own line
+  drawings (MIT). For a brand logo, paste the `d` attribute of a 24×24 SVG path (for
+  example from [Simple Icons](https://simpleicons.org), whose icons are CC0). Brand logos
+  remain their owners' trademarks.
 
 ## How it works
 
@@ -159,6 +266,9 @@ keyframes:
 - **Frames:** fly-ins, printed reveals and frame-by-frame layers (rotors, flames,
   blinking eyes) are all opacity and transform changes.
 
+- **Intro:** a cover the colour of the background sits over each line (or column) and
+  shrinks away in steps of one character, so the text appears a cell at a time.
+
 Every glyph gets its own x position on a character grid, so ASCII art stays aligned
 whichever monospace font the viewer has. If the viewer has turned on reduced motion,
 or the renderer doesn't animate, the SVG shows a finished, still frame.
@@ -166,9 +276,16 @@ or the renderer doesn't animate, the SVG shows a finished, still frame.
 ## Development
 
 ```sh
-python -m unittest discover -s tests -v   # the GIF test runs when Pillow and a browser are present
-python tools/vendor_art.py                # refresh third-party art from its pinned commits
+make setup     # a .venv with readmefetch, Pillow and ruff
+make check     # ruff, a syntax check of the web app's JS, and the tests
+make web       # the web editor (CONFIG=path/to/readmefetch.toml, PORT=8765)
+make demo      # regenerate examples/demo.svg, demo.gif and the example badges
+make vendor    # refresh third-party art from its pinned commits
+make           # every target
 ```
+
+The tests run without the venv too: `python -m unittest discover -s tests`. The GIF
+test runs when Pillow and a browser are present.
 
 ## Credits and licence
 

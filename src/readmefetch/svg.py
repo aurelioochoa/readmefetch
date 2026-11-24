@@ -5,8 +5,16 @@ scripts and cannot load web fonts. So everything here is CSS keyframes, and text
 sits on an explicit character grid (every glyph gets its own x) so ASCII art lines
 up whichever monospace font the viewer has. Without animation support, or with
 reduced motion requested, the SVG shows a finished, static frame.
+
+The first visit: the command types itself, then the output appears according to
+[intro]. Covers in the background colour sit over each line (or column) and shrink
+one character at a time, each at its own speed. With scope "all" the first logo is
+typed too, so the logo cycle starts after the intro, partway into the first logo's
+turn (its usual entrance is skipped once).
 """
 
+import random
+import re
 from xml.sax.saxutils import escape
 
 from . import HOMEPAGE, __version__
@@ -21,6 +29,7 @@ BAR = 36  # title bar
 ASCENT = 15  # cell top sits this far above the baseline
 FONTS = ('ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Cascadia Mono", '
          '"Liberation Mono", "DejaVu Sans Mono", monospace')
+BLOCK_NAMES = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 
 
 def n(x: float) -> str:
@@ -55,6 +64,18 @@ def grid_svg(grid, x0: float, y0: float, pal: dict) -> str:
     return "".join(parts)
 
 
+def line_svg(segments, x0: float, y: float, pal: dict) -> str:
+    """One line on the character grid. segments: (text, colour, css class); spaces are glyphs too."""
+    parts, col = [], 0
+    for text, color, cls in segments:
+        if text.strip():
+            xs = " ".join(n(x0 + (col + i) * CW) for i in range(len(text)))
+            c = f' class="{cls}"' if cls else ""
+            parts.append(f'<text x="{xs}" y="{n(y)}"{c} fill="{resolve(color, pal)}">{escape(text)}</text>')
+        col += len(text)
+    return "".join(parts)
+
+
 class Css:
     def __init__(self):
         self.rules: list[str] = []
@@ -83,33 +104,128 @@ def window_slot(start: float, end: float) -> list[tuple]:
     return frames
 
 
+def rotate(frames: list[tuple], shift: float, held: bool = False) -> list[tuple]:
+    """The same looping keyframes, started `shift` percent into the loop.
+
+    `held`: the rule's own timing function is step-end, so every segment holds its
+    start value. The cut must fall on a keyframe or inside a held segment.
+    """
+    if shift <= 0:
+        return frames
+    fs = sorted(frames, key=lambda f: f[0])
+    if fs[0][0] > 0 or fs[-1][0] < 100:
+        raise ValueError("rotate() needs keyframes at 0% and 100%")
+    shift = next((f[0] for f in fs if abs(f[0] - shift) < 1e-6), shift)  # land exactly on a keyframe
+    i = max(j for j, f in enumerate(fs) if f[0] <= shift)
+    cur = fs[i]
+    timing = cur[2] if len(cur) > 2 else None
+    if cur[0] != shift and not (held or timing == "step-end" or cur[1] == fs[i + 1][1]):
+        raise ValueError("rotate() can't cut an animated segment")
+    out = [(0, cur[1], timing)]
+    out += [(f[0] - shift, *f[1:]) for f in fs if shift < f[0] < 100]
+    end, start = fs[-1], fs[0]  # 100% and 0% meet again at 100 - shift
+    if end[1] != start[1]:
+        out.append((100 - shift - 0.001, end[1], "step-end"))
+    out += [(f[0] + 100 - shift, *f[1:]) for f in fs if f[0] < shift]
+    out.append((100, cur[1]))
+    return out
+
+
+def prompt_segments(cfg, pal: dict) -> list[tuple]:
+    """The prompt as (text, colour, class) segments; {user}@{host} and {cwd} are bold and coloured."""
+    vals = cfg.prompt_values()
+    fmt = cfg.prompt.format.replace("{user}@{host}", "{title}")
+    segs = []
+    for part in re.split(r"(?<!\{)(\{(?:title|user|host|cwd)\})(?!\})", fmt):
+        if not part:
+            continue
+        if part == "{title}":
+            segs.append((f"{vals['user']}@{vals['host']}", cfg.prompt.user_color, "b"))
+        elif part in ("{user}", "{host}"):
+            segs.append((vals[part[1:-1]], cfg.prompt.user_color, "b"))
+        elif part == "{cwd}":
+            segs.append((vals["cwd"], cfg.prompt.cwd_color, "b"))
+        else:
+            segs.append((part.replace("{{", "{").replace("}}", "}"), "fg", ""))
+    return segs
+
+
+def cursor_rect(cfg, x: float, baseline: float, pal: dict, cls: str) -> str:
+    style = cfg.cursor.style
+    if style == "bar":
+        geo = f'x="{n(x)}" y="{n(baseline - ASCENT + 2)}" width="2" height="{LH - 3}"'
+    elif style == "underline":
+        geo = f'x="{n(x)}" y="{n(baseline + 2)}" width="{n(CW)}" height="2"'
+    else:
+        geo = f'x="{n(x)}" y="{n(baseline - ASCENT + 2)}" width="{n(CW)}" height="{LH - 3}"'
+    return f'<rect class="{cls}" {geo} fill="{resolve(cfg.cursor.color, pal)}"/>'
+
+
+def entrance_seconds(lg: Logo, seconds_per_logo: float, art_h: int) -> float:
+    """How long a logo's entrance takes (the part `scope = "all"` skips for the first logo)."""
+    if lg.enter == "print":
+        return min(max(art_h, 1) * 0.05, seconds_per_logo / 3)
+    return min(0.7, seconds_per_logo / 4)
+
+
+def layers_svg(lg: Logo, k: int, ox: float, oy: float, delay: float, pal: dict, css: Css) -> str:
+    """A logo's still base plus its animated layers, each frame shown in turn."""
+    out = [grid_svg(lg.base(), ox, oy, pal)]
+    for j, layer in enumerate(lg.layers):
+        total = sum(layer.weights)
+        start = 0.0
+        for i, (frame, w) in enumerate(zip(layer.frames, layer.weights)):
+            end = start + 100 * w / total
+            cls = f"rf-l{k}-{j}-{i}"
+            if len(layer.frames) > 1:
+                css.rule(f".{cls} {{ animation: {cls} {layer.period:.2f}s {delay:.2f}s infinite step-end; }}")
+                css.keyframes(cls, window_slot(start, end))
+            out.append(f'<g class="{cls}" opacity="{1 if i == 0 else 0}">'
+                       f"{grid_svg(frame, ox + layer.col * CW, oy + layer.row * LH, pal)}</g>")
+            start = end
+    return "".join(out)
+
+
+BOB = ".rf-bob { animation: rf-bob 1.4s ease-in-out infinite alternate; }"
+BOB_FRAMES = [(0, "transform: translateY(1px)"), (100, "transform: translateY(-4px)")]
+
+
 def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
     """-> (svg text, timing: width, height, intro seconds, period seconds of the logo cycle)."""
     css = Css()
     title = cfg.title
     cmd = cfg.command
+    intro = cfg.intro
+    prompt = prompt_segments(cfg, pal)
+    prompt_len = sum(len(s[0]) for s in prompt)
+    win_title = cfg.window_title()
 
     # ---- layout --------------------------------------------------------------------
     art_w = max((lg.width for lg in logos), default=0)
     art_h = max((lg.height for lg in logos), default=0)
-    info = [("title", None), ("rule", None)] + [("line", r) for r in rows]
-    if cfg.color_blocks:
-        info += [("line", None), ("blocks", 0), ("blocks", 1)]
-    info_x = PAD + (art_w + 3) * CW if logos else PAD
-
-    def text_len(kind, r):
-        if kind in ("title", "rule"):
-            return len(title)
-        if kind == "blocks":
-            return 24
+    info_col = art_w + 3 if logos else 0
+    info_x = PAD + info_col * CW
+    user, _, host = title.partition("@")
+    key_cls = "b rf-key"
+    lines: list = [[(user, "accent", key_cls), ("@", "fg", ""), (host, "accent", key_cls)],
+                   [("-" * len(title), "dim", "")]]
+    for r in rows:
         if r is None:
-            return 0
-        return len(r[0]) + 2 + len(r[1]) if r[0] else len(r[1])
+            lines.append([])
+        elif r[0]:
+            lines.append([(r[0], "accent", key_cls), (": " + r[1], "fg", "")])
+        else:
+            lines.append([(r[1], "fg", "")])
+    if cfg.color_blocks:
+        lines += [[], "blocks", "bright-blocks"]
 
-    prompt_len = len(title) + 4  # "user@host:~$ "
-    width = round(max(info_x + max(text_len(*i) for i in info) * CW + PAD,
-                      2 * PAD + (prompt_len + len(cmd) + 2) * CW, 320))
-    total_rows = max(art_h, len(info))
+    def line_len(line) -> int:
+        return 24 if isinstance(line, str) else sum(len(s[0]) for s in line)
+
+    width = round(max(info_x + max(line_len(x) for x in lines) * CW + PAD,
+                      2 * PAD + (prompt_len + len(cmd) + 2) * CW,
+                      (len(win_title) * 7.2 + 150) if win_title else 0, 320))
+    total_rows = max(art_h, len(lines))
     y0 = BAR + 30  # baseline of the command line
     body_y = y0 + 2 * LH  # baseline of the first output row
     final_y = body_y + total_rows * LH + LH
@@ -117,11 +233,53 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
 
     # ---- timing (seconds) ----------------------------------------------------------
     t_type = 0.4
-    type_dur = max(0.3, 0.08 * len(cmd))
+    type_dur = max(0.3, len(cmd) / intro.command_speed) if cmd else 0
     t_out = t_type + type_dur + 0.35
-    stagger = 0.04
-    t_end = t_out + total_rows * stagger
     period = cfg.seconds_per_logo * max(len(logos), 1)
+    first = logos[0] if logos else None
+    f_ox = (art_w - first.width) // 2 if first else 0
+    f_oy = (art_h - first.height) // 2 if first else 0
+
+    # the intro: what is covered, and how each line (or column) is uncovered
+    reveal = []  # (x, y, w, h, origin, keyframes, steps, delay, duration)
+    if intro.scope == "none":
+        t_end = t_out + total_rows * 0.04
+    else:
+        cells: set[tuple[int, int]] = set()
+        for r, line in enumerate(lines):
+            cells.update((r, info_col + c) for c in range(line_len(line)))
+        if intro.scope == "all" and first:
+            for r, row in enumerate(first.still()):
+                cells.update((f_oy + r, f_ox + c) for c, cell in enumerate(row) if cell)
+        units = {}  # line (row or column) -> [first, last] along the direction
+        for r, c in cells:
+            lane, pos = (r, c) if intro.horizontal else (c, r)
+            lo, hi = units.get(lane, (pos, pos))
+            units[lane] = (min(lo, pos), max(hi, pos))
+        rng = random.Random(intro.seed)
+        base = min(units) if units else 0
+        t_end = t_out
+        for lane in sorted(units):
+            lo, hi = units[lane]
+            count = hi - lo + 1
+            speed = intro.cells_per_second * max(0.15, 1 + intro.variance * (2 * rng.random() - 1))
+            dur = count / speed
+            delay = t_out + (lane - base) * intro.gap
+            t_end = max(t_end, delay + dur)
+            if intro.horizontal:
+                x, y, w, h = PAD + lo * CW, body_y + lane * LH - ASCENT, count * CW, LH
+                origin = (x + w, y) if intro.direction == "left-to-right" else (x, y)
+                reveal.append((x, y, w, h, origin, "rf-rx", count, delay, dur))
+            else:
+                x, y, w, h = PAD + lane * CW, body_y + lo * LH - ASCENT, CW + 0.5, count * LH
+                origin = (x, y + h) if intro.direction == "top-to-bottom" else (x, y)
+                reveal.append((x, y, w, h, origin, "rf-ry", count, delay, dur))
+    typed_art = intro.scope == "all" and first is not None
+    cycle_at = t_end if typed_art else t_out  # when the logo cycle starts
+    shift = 100 * entrance_seconds(first, cfg.seconds_per_logo, art_h) / period if typed_art else 0
+
+    def cycle(frames, held=False):
+        return rotate(frames, shift, held)
 
     out = []
     a = out.append
@@ -149,54 +307,56 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
     a(f'<rect x=".5" y=".5" width="{width - 1}" height="{height - 1}" rx="10" fill="{pal["bg"]}" stroke="{pal["border"]}"/>')
     a(f'<path d="M.5 {BAR}V10.5a10 10 0 0 1 10-10h{width - 21}a10 10 0 0 1 10 10V{BAR}z" fill="{pal["bar"]}"/>')
     a(f'<line x1=".5" y1="{BAR}" x2="{width - .5}" y2="{BAR}" stroke="{pal["border"]}"/>')
-    for i, c in enumerate(["#ff5f57", "#febc2e", "#28c840"]):
-        a(f'<circle cx="{20 + i * 20}" cy="{BAR / 2}" r="6" fill="{c}"/>')
-    a(f'<text x="{width / 2}" y="{BAR / 2 + 4.5}" fill="{pal["dim"]}" text-anchor="middle" style="font-size:12px">'
-      f"{escape(title)}: ~</text>")
-
-    def prompt(y, extra=""):
-        return (f'<text x="{PAD}" y="{n(y)}"{extra}><tspan class="b" fill="{pal["green"]}">{escape(title)}</tspan>'
-                f'<tspan fill="{pal["fg"]}">:</tspan><tspan class="b" fill="{pal["blue"]}">~</tspan>'
-                f'<tspan fill="{pal["fg"]}">$ </tspan></text>')
+    if cfg.window.buttons:
+        for i, c in enumerate(["#ff5f57", "#febc2e", "#28c840"]):
+            a(f'<circle cx="{20 + i * 20}" cy="{BAR / 2}" r="6" fill="{c}"/>')
+    if win_title:
+        a(f'<text x="{width / 2}" y="{BAR / 2 + 4.5}" fill="{pal["dim"]}" text-anchor="middle" style="font-size:12px">'
+          f"{escape(win_title)}</text>")
 
     # ---- the command, typed --------------------------------------------------------
     cmd_x = PAD + prompt_len * CW
     cmd_w = len(cmd) * CW
-    a(prompt(y0))
-    a(grid_svg([[(ch, "fg") if ch != " " else None for ch in cmd]], cmd_x, y0, pal))
-    a(f'<rect class="rf-cover" x="{n(cmd_x + cmd_w)}" y="{y0 - ASCENT}" width="{n(cmd_w + CW)}" height="{LH}" fill="{pal["bg"]}"/>')
-    a(f'<rect class="rf-caret" x="{n(cmd_x)}" y="{y0 - ASCENT + 2}" width="{n(CW)}" height="{LH - 3}" fill="{pal["fg"]}"/>')
-    steps = max(len(cmd), 1)
-    css.rule(f".rf-cover {{ animation: rf-type {type_dur:.2f}s steps({steps}, end) {t_type}s backwards; }}")
-    css.keyframes("rf-type", [(0, f"transform: translateX(-{n(cmd_w)}px)"), (100, "transform: translateX(0)")])
-    css.rule(f".rf-caret {{ opacity: 0; animation: rf-caret-on {t_out:.2f}s linear, "
-             f"rf-caret-move {type_dur:.2f}s steps({steps}, end) {t_type}s both; }}")
+    a(line_svg(prompt, PAD, y0, pal))
+    if cmd:
+        a(grid_svg([[(ch, "fg") if ch != " " else None for ch in cmd]], cmd_x, y0, pal))
+        a(f'<rect class="rf-cover" x="{n(cmd_x + cmd_w)}" y="{y0 - ASCENT}" width="{n(cmd_w + CW)}" height="{LH}" '
+          f'fill="{pal["bg"]}"/>')
+        steps = len(cmd)
+        css.rule(f".rf-cover {{ animation: rf-type {type_dur:.2f}s steps({steps}, end) {t_type}s backwards; }}")
+        css.keyframes("rf-type", [(0, f"transform: translateX(-{n(cmd_w)}px)"), (100, "transform: translateX(0)")])
+        css.rule(f".rf-caret {{ opacity: 0; animation: rf-caret-on {t_out:.2f}s linear, "
+                 f"rf-caret-move {type_dur:.2f}s steps({steps}, end) {t_type}s both; }}")
+        css.keyframes("rf-caret-move", [(0, "transform: translateX(0)"), (100, f"transform: translateX({n(cmd_w)}px)")])
+    else:
+        css.rule(f".rf-caret {{ opacity: 0; animation: rf-caret-on {t_out:.2f}s linear; }}")
+    a(cursor_rect(cfg, cmd_x, y0, pal, "rf-caret"))
     css.keyframes("rf-caret-on", [(0, "opacity: 1"), (99, "opacity: 1"), (100, "opacity: 0")])
-    css.keyframes("rf-caret-move", [(0, "transform: translateX(0)"), (100, f"transform: translateX({n(cmd_w)}px)")])
 
     # ---- logos ---------------------------------------------------------------------
     if logos:
         clip_x, clip_y = PAD - CW, body_y - ASCENT - 6
         clip_w, clip_h = (art_w + 2) * CW, art_h * LH + 10
         a(f'<clipPath id="rf-art"><rect x="{n(clip_x)}" y="{n(clip_y)}" width="{n(clip_w)}" height="{n(clip_h)}"/></clipPath>')
-        a(f'<g class="ln art" style="animation-delay:{t_out:.2f}s" clip-path="url(#rf-art)">')
+        fade_in = "" if typed_art else f' style="animation-delay:{t_out:.2f}s"'
+        a(f'<g class="{"art" if typed_art else "ln art"}"{fade_in} clip-path="url(#rf-art)">')
         count = len(logos)
+        cyc = f"{period:.2f}s {cycle_at:.2f}s infinite"
         for k, lg in enumerate(logos):
             p0, p1 = 100 * k / count, 100 * (k + 1) / count
             ox = PAD + (art_w - lg.width) // 2 * CW
             oy = body_y + (art_h - lg.height) // 2 * LH
             ease = min(0.7 / period * 100, (p1 - p0) / 4)
             scene = f"rf-s{k}"
-            cyc = f"{period:.2f}s {t_out:.2f}s infinite"
             if count > 1 and lg.enter != "fade":
                 css.rule(f".{scene} {{ animation: {scene} {cyc} step-end; }}")
-                css.keyframes(scene, window_slot(p0, p1))
+                css.keyframes(scene, cycle(window_slot(p0, p1), held=True))
             elif lg.enter == "fade":
                 css.rule(f".{scene} {{ animation: {scene} {cyc} linear; }}")
                 fr = [] if p0 <= 0 else [(0, "opacity: 0", "step-end")]
                 fr += [(p0, "opacity: 0"), (p0 + ease, "opacity: 1"), (p1 - ease, "opacity: 1"), (p1, "opacity: 0")]
                 fr += [(100, "opacity: 0")] if p1 < 100 else []
-                css.keyframes(scene, fr)
+                css.keyframes(scene, cycle(fr))
             a(f'<g class="{scene}" opacity="{1 if k == 0 else 0}">')
             if lg.ground:
                 a(grid_svg(lg.ground, ox, oy + lg.art_rows * LH, pal))
@@ -209,79 +369,92 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
                 fr += [(p0, lift, "ease-out"), (p0 + ease, rest, "linear"), (p1 - ease, rest, "ease-in"), (p1, lift, "step-end")]
                 fr += [(100, lift)] if p1 < 100 else []
                 css.rule(f".{mover} {{ animation: {mover} {cyc}; }}")
-                css.keyframes(mover, fr)
+                css.keyframes(mover, cycle(fr))
             a(f'<g class="{mover}">' if mover else "<g>")
             a('<g class="rf-bob">' if lg.hover else "<g>")
-            a(grid_svg(lg.base(), ox, oy, pal))
-            for j, layer in enumerate(lg.layers):
-                total = sum(layer.weights)
-                start = 0.0
-                for i, (frame, w) in enumerate(zip(layer.frames, layer.weights)):
-                    end = start + 100 * w / total
-                    cls = f"rf-l{k}-{j}-{i}"
-                    if len(layer.frames) > 1:
-                        css.rule(f".{cls} {{ animation: {cls} {layer.period:.2f}s {t_out:.2f}s infinite step-end; }}")
-                        css.keyframes(cls, window_slot(start, end))
-                    a(f'<g class="{cls}" opacity="{1 if i == 0 else 0}">'
-                      f"{grid_svg(frame, ox + layer.col * CW, oy + layer.row * LH, pal)}</g>")
-                    start = end
+            a(layers_svg(lg, k, ox, oy, t_out, pal, css))
             a("</g></g>")
             if lg.enter == "print":
                 cover = f"rf-c{k}"
                 rows_n = max(art_h, 1)  # one step per row of the art area
-                dur = 100 * min(rows_n * 0.05, cfg.seconds_per_logo / 3) / period
+                dur = 100 * entrance_seconds(lg, cfg.seconds_per_logo, art_h) / period
                 up = f"transform: translateY(-{n(clip_h)}px)"
                 fr = [] if p0 <= 0 else [(0, up, "step-end")]
                 fr += [(p0, up, f"steps({rows_n}, end)"), (p0 + dur, "transform: translateY(0)", "step-end"),
                        (100, "transform: translateY(0)")]
                 css.rule(f".{cover} {{ animation: {cover} {cyc}; }}")
-                css.keyframes(cover, fr)
+                css.keyframes(cover, cycle(fr))
                 a(f'<rect class="{cover}" x="{n(clip_x)}" y="{n(clip_y + clip_h)}" width="{n(clip_w)}" '
                   f'height="{n(clip_h)}" fill="{pal["bg"]}"/>')
             a("</g>")
         a("</g>")
         if any(lg.hover for lg in logos):
-            css.rule(".rf-bob { animation: rf-bob 1.4s ease-in-out infinite alternate; }")
-            css.keyframes("rf-bob", [(0, "transform: translateY(1px)"), (100, "transform: translateY(-4px)")])
+            css.rule(BOB)
+            css.keyframes("rf-bob", BOB_FRAMES)
 
     # ---- info ----------------------------------------------------------------------
     accents = [resolve(lg.accent, pal) for lg in logos] or [pal["accent"]]
     if len(set(accents)) > 1:
         fr = [(100 * k / len(accents), f"fill: {c}") for k, c in enumerate(accents)] + [(100, f"fill: {accents[-1]}")]
-        css.rule(f".rf-key {{ animation: rf-key {period:.2f}s {t_out:.2f}s infinite step-end; }}")
-        css.keyframes("rf-key", fr)
-    key_fill = accents[0]
-    user, _, host = title.partition("@")
-    for r, (kind, value) in enumerate(info):
+        css.rule(f".rf-key {{ animation: rf-key {period:.2f}s {cycle_at:.2f}s infinite step-end; }}")
+        css.keyframes("rf-key", cycle(fr, held=True))
+    key_pal = dict(pal, accent=accents[0])
+    for r, line in enumerate(lines):
         y = body_y + r * LH
-        part = ""
-        if kind == "title":
-            part = (f'<text x="{n(info_x)}" y="{y}" class="b"><tspan class="rf-key" fill="{key_fill}">{escape(user)}</tspan>'
-                    f'<tspan fill="{pal["fg"]}">@</tspan><tspan class="rf-key" fill="{key_fill}">{escape(host)}</tspan></text>')
-        elif kind == "rule":
-            part = grid_svg([[("-", "dim")] * len(title)], info_x, y, pal)
-        elif kind == "blocks":
-            names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
-            prefix = "" if value == 0 else "bright-"
+        if isinstance(line, str):
+            prefix = "" if line == "blocks" else "bright-"
             part = "".join(f'<rect x="{n(info_x + i * 3 * CW)}" y="{y - ASCENT + 1}" width="{n(3 * CW)}" '
-                           f'height="{LH - (1 if value == 0 else 2)}" fill="{pal[prefix + c]}"/>' for i, c in enumerate(names))
-        elif value is not None:
-            key, text = value
-            if key:
-                part = (f'<text x="{n(info_x)}" y="{y}"><tspan class="b rf-key" fill="{key_fill}">{escape(key)}</tspan>'
-                        f'<tspan fill="{pal["fg"]}">: {escape(text)}</tspan></text>')
-            else:
-                part = f'<text x="{n(info_x)}" y="{y}" fill="{pal["fg"]}">{escape(text)}</text>'
+                           f'height="{LH - (1 if line == "blocks" else 2)}" fill="{pal[prefix + c]}"/>'
+                           for i, c in enumerate(BLOCK_NAMES))
+        else:
+            part = line_svg(line, info_x, y, key_pal)
         if part:
-            a(f'<g class="ln" style="animation-delay:{t_out + r * stagger:.2f}s">{part}</g>')
+            fade = f' class="ln" style="animation-delay:{t_out + r * 0.04:.2f}s"' if intro.scope == "none" else ""
+            a(f"<g{fade}>{part}</g>")
+
+    # ---- the intro's covers (over everything they hide) ----------------------------
+    if reveal:
+        css.rule(".rf-rv { opacity: 0; }")
+        css.keyframes("rf-rx", [(0, "opacity: 1; transform: scaleX(1)"), (100, "opacity: 1; transform: scaleX(0)")])
+        css.keyframes("rf-ry", [(0, "opacity: 1; transform: scaleY(1)"), (100, "opacity: 1; transform: scaleY(0)")])
+        a('<g shape-rendering="crispEdges">')  # no anti-aliased seams between neighbouring covers
+        for x, y, w, h, (ox_, oy_), frames, steps, delay, dur in reveal:
+            a(f'<rect class="rf-rv" x="{n(x)}" y="{n(y)}" width="{n(w)}" height="{n(h)}" fill="{pal["bg"]}" opacity="0" '
+              f'style="transform-origin:{n(ox_)}px {n(oy_)}px;'
+              f'animation:{frames} {dur:.2f}s steps({steps},end) {delay:.2f}s both"/>')
+        a("</g>")
 
     # ---- the next prompt, with a blinking cursor -----------------------------------
-    a(prompt(final_y, f' class="ln" style="animation-delay:{t_end:.2f}s"'))
-    a(f'<rect class="rf-cursor" x="{n(cmd_x)}" y="{final_y - ASCENT + 2}" width="{n(CW)}" height="{LH - 3}" fill="{pal["fg"]}"/>')
-    css.rule(f".rf-cursor {{ animation: rf-show .12s ease-out {t_end:.2f}s backwards, rf-blink 1.1s step-end {t_end:.2f}s infinite; }}")
-    css.keyframes("rf-blink", [(0, "opacity: 1"), (50, "opacity: 0"), (100, "opacity: 0")])
+    a(f'<g class="ln" style="animation-delay:{t_end:.2f}s">{line_svg(prompt, PAD, final_y, pal)}</g>')
+    a(cursor_rect(cfg, cmd_x, final_y, pal, "rf-cursor"))
+    blink = (f", rf-blink {cfg.cursor.period:.2f}s step-end {t_end:.2f}s infinite" if cfg.cursor.blink else "")
+    css.rule(f".rf-cursor {{ animation: rf-show .12s ease-out {t_end:.2f}s backwards{blink}; }}")
+    if cfg.cursor.blink:
+        css.keyframes("rf-blink", [(0, "opacity: 1"), (50, "opacity: 0"), (100, "opacity: 0")])
     css.rule("@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }")
 
     out.insert(style_at, "<style>\n" + "\n".join(css.rules) + "\n</style>")
     a("</svg>")
-    return "\n".join(out) + "\n", {"width": width, "height": height, "intro": t_end, "period": period}
+    intro_s = max(t_end, cycle_at)
+    return "\n".join(out) + "\n", {"width": width, "height": height, "intro": intro_s, "period": period}
+
+
+def render_logo(lg: Logo, pal: dict) -> tuple[str, dict]:
+    """Just one logo, animated, on the terminal background (the web app's logo editor preview)."""
+    css = Css()
+    width = round((lg.width + 4) * CW)
+    height = round((lg.height + 2) * LH)
+    ox, oy = 2 * CW, LH + ASCENT - 4
+    css.rule(f"text {{ font-family: {FONTS}; font-size: {FONT}px; white-space: pre; font-weight: 700; }}")
+    body = layers_svg(lg, 0, ox, oy, 0, pal, css)
+    if lg.ground:
+        body += grid_svg(lg.ground, ox, oy + lg.art_rows * LH, pal)
+    if lg.hover:
+        css.rule(BOB)
+        css.keyframes("rf-bob", BOB_FRAMES)
+        body = f'<g class="rf-bob">{body}</g>'
+    css.rule("@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }")
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+           f"<style>{' '.join(css.rules)}</style>"
+           f'<rect width="{width}" height="{height}" rx="8" fill="{pal["bg"]}"/>{body}</svg>\n')
+    return svg, {"width": width, "height": height}

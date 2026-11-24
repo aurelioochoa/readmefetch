@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "readmefetch"
 version = "0.1.0"
-description = "Your GitHub profile README as an animated terminal running neofetch: SVG, GIF and terminal output"
+description = "Your GitHub profile README as an animated, neofetch-style terminal: SVG, GIF, terminal output and a web editor"
 readme = "README.md"
 requires-python = ">=3.11"
 # The code is MIT; bundled art keeps its own licence (see CREDITS.md).
@@ -22,6 +22,7 @@ dependencies = []
 
 [project.optional-dependencies]
 gif = ["pillow>=10"]
+dev = ["pillow>=10", "ruff>=0.6"]
 
 [project.scripts]
 readmefetch = "readmefetch.cli:main"
@@ -31,4 +32,12 @@ Homepage = "https://github.com/aurelioochoa/readmefetch"
 Credits = "https://github.com/aurelioochoa/readmefetch/blob/main/CREDITS.md"
 
 [tool.setuptools.package-data]
-readmefetch = ["art/*/*"]
+readmefetch = ["art/*/*", "web/*"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N"]
+ignore = ["E731", "B905"]  # zip() pairs lists of equal length by construction

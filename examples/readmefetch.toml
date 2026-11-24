@@ -1,7 +1,7 @@
 # The config behind examples/demo.svg and demo.gif.
 user = "dev"
 host = "readmefetch"
-command = "neofetch"
+command = "readmefetch"
 theme = "github-dark"
 logos = ["tux", "drone", "computer", "cauldron", "banner", "python"]
 seconds_per_logo = 4.5
@@ -25,3 +25,59 @@ info = [
 [banner]
 text = "hello"
 font = "slant"
+
+[intro]
+scope = "all"            # type the whole screen in, logo too
+direction = "left-to-right"
+
+# The badges in readmefetch's README, one per style (`make demo` writes them to examples/badges/).
+[badges]
+dir = "badges"
+
+[[badge]]
+label = "Website"
+message = "example.com"
+link = "https://example.com"
+icon = "globe"
+style = "for-the-badge"
+color = "#00d4ff"
+
+[[badge]]
+label = "Email"
+message = "dev@example.com"
+link = "mailto:dev@example.com"
+icon = "mail"
+style = "flat"
+color = "red"
+
+[[badge]]
+label = "Blog"
+message = "posts"
+link = "https://example.com/blog"
+icon = "book"
+style = "flat-square"
+color = "magenta"
+
+[[badge]]
+label = "Games"
+message = "play"
+link = "https://example.com/games"
+icon = "game"
+style = "pill"
+color = "#6366f1"
+
+[[badge]]
+label = "Sponsor"
+message = "thanks"
+link = "https://example.com/sponsor"
+icon = "heart"
+style = "plastic"
+color = "#db61a2"
+
+[[badge]]
+label = "readmefetch"
+message = "--help"
+link = "https://github.com/aurelioochoa/readmefetch"
+icon = "terminal"
+style = "terminal"
+file = "terminal.svg"

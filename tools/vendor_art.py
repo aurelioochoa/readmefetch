@@ -90,9 +90,9 @@ def xterm256(n: int) -> str:
     if n < 232:
         n -= 16
         lv = [0, 95, 135, 175, 215, 255]
-        return "#%02x%02x%02x" % (lv[n // 36], lv[n // 6 % 6], lv[n % 6])
+        return f"#{lv[n // 36]:02x}{lv[n // 6 % 6]:02x}{lv[n % 6]:02x}"
     g = 8 + (n - 232) * 10
-    return "#%02x%02x%02x" % (g, g, g)
+    return f"#{g:02x}{g:02x}{g:02x}"
 
 
 def ff_color(token: str) -> str:
@@ -103,7 +103,7 @@ def ff_color(token: str) -> str:
         return xterm256(int(m.group(1)))
     m = re.fullmatch(r'FF_COLOR_FG_RGB\s*"(\d+);(\d+);(\d+)"', token)
     if m:
-        return "#%02x%02x%02x" % tuple(int(x) for x in m.groups())
+        return "#" + "".join(f"{int(x):02x}" for x in m.groups())
     m = re.fullmatch(r"FF_COLOR_FG_(LIGHT_)?([A-Z]+)", token)
     if m:
         if m.group(2) == "DEFAULT":

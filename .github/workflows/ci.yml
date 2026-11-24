@@ -24,3 +24,21 @@ jobs:
           python -m pip install --quiet .
           readmefetch --version
           readmefetch logos computer --color never
+
+  action:
+    # Runs the composite action the way a profile repository does, so a broken action.yml fails here first.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: render
+        uses: ./
+        with:
+          config: examples/readmefetch.toml
+          commit: "false"
+      - name: The action wrote the SVG and the badges
+        env:
+          FILES: ${{ steps.render.outputs.files }}
+        run: |
+          printf '%s\n' "$FILES"
+          test "$(printf '%s\n' "$FILES" | grep -c .)" -eq 7
+          while read -r f; do test -s "$f"; done <<< "$FILES"

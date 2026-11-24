@@ -10,7 +10,7 @@ inputs:
     description: Path to readmefetch.toml
     default: readmefetch.toml
   output:
-    description: SVG path (default: `output` in the config)
+    description: "SVG path (default: `output` in the config)"
     default: ""
   gif:
     description: Also export a GIF next to the SVG ("true" or "false")

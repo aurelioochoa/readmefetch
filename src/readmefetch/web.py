@@ -22,13 +22,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import HOMEPAGE, __version__, badges, config, figlet, logos, stats, svg
+from . import HOMEPAGE, __version__, badges, config, figlet, frames, icons, logos, rich, stats, svg
 from .themes import THEMES, palette
 
+# The page (web/app.js) and this server change together. The server reads the page from disk on
+# every request, so a server started before an upgrade would hand out a page it can't feed: the
+# page checks this number and says so. Bump it with app.js's API_VERSION when /api/state changes.
+API_VERSION = 2
 STATIC = Path(__file__).parent / "web"
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml"}
 MAX_BODY = 4 * 1024 * 1024
+UI_ICONS = ["person", "list-unordered", "image", "play", "paintbrush", "browser", "tag", "pencil", "sun", "moon", "sync",
+            "download", "copy", "check", "x", "search", "plus", "undo", "trash", "screen-full", "screen-normal", "mark-github",
+            "info", "alert", "light-bulb", "arrow-right", "chevron-right", "sparkle-fill", "sliders", "eye", "graph",
+            "desktop-download", "zap", "grabber", "repo", "star", "people", "git-commit", "git-pull-request", "issue-opened",
+            "flame", "code", "code-review", "repo-forked", "calendar", "terminal"]
 STATS_TTL = 600  # seconds to reuse live GitHub numbers, so typing doesn't hit the API on every key
 
 
@@ -50,6 +59,7 @@ class App:
         self._stats: dict = {}
         self._gif_lock = threading.Lock()
         self._catalog: list | None = None
+        self._icons: list | None = None
 
     # -- the config ---------------------------------------------------------------------
 
@@ -75,6 +85,7 @@ class App:
             "path": str(self.path),
             "error": error,
             "version": __version__,
+            "api": API_VERSION,
             "homepage": HOMEPAGE,
             "themes": THEMES,
             "logos": self.catalog(),
@@ -86,6 +97,13 @@ class App:
             "enters": list(logos.ENTERS),
             "badge_styles": badges.STYLES,
             "icons": badges.ICONS,
+            "window_styles": frames.STYLES,
+            "window_labels": frames.LABELS,
+            "presets": frames.PRESETS,
+            "github_keys": sorted(config.GITHUB_KEYS),
+            "visuals": sorted(config.VISUALS),
+            "metrics_defaults": config.to_dict(config.Config())["metrics"],
+            "ui_icons": {n: {"box": icons.get(f"oct-{n}")["box"], "svg": icons.get(f"oct-{n}")["svg"]} for n in UI_ICONS},
             "defaults": {name: config.to_dict(config.Config())[name] for name in config.TABLES},
             "gif": gif_status(),
         }
@@ -108,7 +126,8 @@ class App:
         if not needed:
             return {}, ""
         if not live:
-            return stats.offline(needed), "Live numbers are off: they show as 0."
+            sample = " Graphs show sample data." if needed & {"calendar", "languages"} else ""
+            return stats.offline(needed), f"Live numbers are off: they show as 0.{sample}"
         key = (cfg.github.lower(), frozenset(needed))
         hit = self._stats.get(key)
         if hit and time.time() - hit[0] < STATS_TTL:
@@ -116,7 +135,7 @@ class App:
         try:
             got = stats.fetch(cfg.github, needed)
             note = ("" if got.get("contributions") != "?"
-                    else "{contributions} needs a GitHub token (GITHUB_TOKEN, GH_TOKEN or gh auth login).")
+                    else "Contribution numbers need a GitHub token (GITHUB_TOKEN, GH_TOKEN or gh auth login).")
         except (OSError, RuntimeError, KeyError) as e:
             got, note = stats.offline(needed), f"Couldn't reach the GitHub API ({e}); numbers show as 0."
         self._stats[key] = (time.time(), got, note)
@@ -125,12 +144,14 @@ class App:
     def render(self, data: dict, live: bool) -> dict:
         cfg = config.from_dict(data, self.path)
         numbers, note = self.numbers(cfg, live)
-        rows = config.info_rows(cfg, config.values(cfg, numbers, dt.date.today()))
-        text, meta = svg.render(cfg, rows, cfg.load_logos(), palette(cfg.theme, cfg.colors))
         pal = palette(cfg.theme, cfg.colors)
-        badge_svgs = [{"file": b.file, "svg": badges.render(b, pal), "text": b.text, "link": b.link} for b in cfg.badges]
+        vals = config.values(cfg, numbers, dt.date.today(), pal)
+        rows = config.info_rows(cfg, vals)
+        text, meta = svg.render(cfg, rows, cfg.load_logos(), pal)
+        badge_svgs = [{"file": b.file, "svg": badges.render(b, pal, cfg.window.style), "text": b.text, "link": b.link}
+                      for b in config.badges_for(cfg, vals)]
         alt = f"A terminal runs {cfg.command or 'a command'} for {cfg.title}"
-        details = "; ".join(f"{r[0]}: {r[1]}" if r[0] else r[1] for r in rows if r)
+        details = "; ".join(f"{rich.plain(r[0])}: {rich.plain(r[1])}" if r[0] else rich.plain(r[1]) for r in rows if r)
         return {"svg": text, **meta, "note": note, "toml": config.dump(data), "output": cfg.output,
                 "alt": f"{alt}: {details}" if details else alt, "cfg": cfg, "badges": badge_svgs,
                 "badge_snippet": badges.snippet(cfg.badges, cfg.badge_defaults["dir"])}
@@ -182,6 +203,11 @@ class App:
         text, meta = svg.render_logo(lg, pal)
         return {"svg": text, **meta}
 
+    def icon_catalog(self) -> list:
+        if self._icons is None:
+            self._icons = icons.catalog()
+        return self._icons
+
     def builtin(self, name: str, ctx: dict) -> dict:
         lg = logos.load(name, {"initials": ctx.get("initials") or "RF", "user": ctx.get("user") or "you",
                                "banner": ctx.get("banner") or {}})
@@ -216,8 +242,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _json(self, obj, status: int = 200) -> None:
-        self._send(status, json.dumps(obj, default=str).encode(), "application/json; charset=utf-8")
+    def _json(self, obj, status: int = 200, extra: dict | None = None) -> None:
+        self._send(status, json.dumps(obj, default=str).encode(), "application/json; charset=utf-8", extra)
 
     def _error(self, status: int, message: str) -> None:
         self._json({"ok": False, "error": message}, status)
@@ -234,6 +260,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(url.path[1:])
         if url.path == "/api/state":
             return self._json(self.app.state())
+        if url.path == "/api/icons":
+            return self._json(self.app.icon_catalog(), extra={"Cache-Control": "max-age=3600"})
+        if url.path == "/api/frame":
+            q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            try:
+                pal = palette(q.get("theme", "github-dark"))
+                text = frames.thumbnail(q.get("style", "macos"), pal, q.get("title", "Terminal"))
+            except (ValueError, KeyError) as e:
+                return self._error(HTTPStatus.NOT_FOUND, str(e))
+            return self._send(200, text.encode(), "image/svg+xml", {"Cache-Control": "max-age=300"})
+        if url.path == "/api/badge":
+            q = {k: v[0] for k, v in parse_qs(url.query).items()}
+            try:
+                pal = palette(q.get("theme", "github-dark"))
+                b = badges.Badge(label=q.get("label", "Label"), message=q.get("message", "message"),
+                                 color=q.get("color") or "accent", icon=q.get("icon", ""), style=q.get("style", "flat"))
+                if b.style not in badges.STYLES:
+                    raise ValueError(f"unknown badge style {b.style!r}")
+                text = badges.render(b, pal, q.get("window", "macos"))
+            except (ValueError, KeyError) as e:
+                return self._error(HTTPStatus.NOT_FOUND, str(e))
+            return self._send(200, text.encode(), "image/svg+xml", {"Cache-Control": "max-age=60"})
         if url.path == "/api/thumb":
             q = {k: v[0] for k, v in parse_qs(url.query).items()}
             try:

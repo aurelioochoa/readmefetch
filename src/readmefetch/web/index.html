@@ -13,12 +13,14 @@
   <a class="brand" id="brand" href="https://github.com/aurelioochoa/readmefetch" target="_blank" rel="noopener">
     <img src="/favicon.svg" alt="" width="24" height="24"> readmefetch
   </a>
-  <span class="file-path" id="file-path"></span>
+  <span class="version" id="version"></span>
+  <span class="file-path" id="file-path"><span id="file-path-text"></span></span>
   <span class="spacer"></span>
-  <label class="switch" title="Fetch {repos}, {stars}, {followers} and {contributions} from GitHub (cached for 10 minutes)">
-    <input type="checkbox" id="live"> <span>Live GitHub numbers</span>
+  <span class="dirty" id="dirty">Unsaved changes</span>
+  <label class="toggle" title="Fetch your GitHub numbers, graphs and languages (cached for 10 minutes)">
+    <input type="checkbox" id="live"><span class="track" aria-hidden="true"></span><span>Live GitHub data</span>
   </label>
-  <button type="button" class="btn btn-sm" id="color-mode" aria-pressed="false">Light page</button>
+  <button type="button" class="btn btn-sm btn-square" id="color-mode" aria-pressed="false" aria-label="Light page" title="Light page"></button>
   <button type="button" class="btn btn-sm btn-primary" id="save">Save</button>
 </header>
 
@@ -36,6 +38,7 @@
         <svg class="icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 2.5h4.5c.8 0 1.5.7 1.5 1.5v9.5c0-.8-.7-1.5-1.5-1.5H2zm12 0H9.5C8.7 2.5 8 3.2 8 4v9.5c0-.8.7-1.5 1.5-1.5H14z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
         <span id="readme-title">README.md</span>
         <span class="spacer"></span>
+        <button type="button" class="btn btn-sm" id="zoom" aria-pressed="false" title="Show it at its real size">Actual size</button>
         <button type="button" class="btn btn-sm" id="replay" title="Play it again from the start, like a new visit">Replay</button>
       </div>
       <div class="box-body readme-body">
@@ -44,7 +47,7 @@
         <p class="preview-badges" id="preview-badges" hidden></p>
       </div>
     </section>
-    <p class="meta" id="meta"></p>
+    <div class="meta" id="meta"></div>
 
     <section class="box export" aria-labelledby="export-title">
       <div class="box-header"><h2 id="export-title">Export</h2></div>

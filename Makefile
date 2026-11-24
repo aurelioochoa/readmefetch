@@ -145,8 +145,9 @@ logos: ## List the built-in logos and where their art comes from
 	$(RF) logos
 
 .PHONY: vendor
-vendor: ## Re-download third-party art from its pinned commits (needs the network)
+vendor: ## Re-download third-party art and icons from their pinned releases (needs the network)
 	$(PY) tools/vendor_art.py
+	$(PY) tools/vendor_icons.py
 
 ##@ Cleaning
 .PHONY: clean

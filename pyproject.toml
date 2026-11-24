@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "readmefetch"
-version = "0.1.0"
+version = "0.2.0"
 description = "Your GitHub profile README as an animated, neofetch-style terminal: SVG, GIF, terminal output and a web editor"
 readme = "README.md"
 requires-python = ">=3.11"
 # The code is MIT; bundled art keeps its own licence (see CREDITS.md).
-license = "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-SA-3.0"
-license-files = ["LICENSE", "CREDITS.md", "src/readmefetch/art/*/LICENSE*"]
+license = "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-SA-3.0 AND Unlicense"
+license-files = ["LICENSE", "CREDITS.md", "src/readmefetch/art/*/LICENSE*", "src/readmefetch/art/*/DISCLAIMER*"]
 authors = [{ name = "Aurelio Ochoa" }]
 keywords = ["neofetch", "readme", "github-profile", "svg", "ascii-art", "terminal"]
 classifiers = [

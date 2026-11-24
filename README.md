@@ -19,9 +19,11 @@ with spinning rotors, Tux blinks, a cauldron boils, a computer types a shell ses
 and the info keys change colour to match each logo. The cursor keeps blinking.
 
 It's a single SVG with CSS animations, which GitHub plays in READMEs. It has no
-scripts and loads no fonts. readmefetch can also print the same thing in your
-terminal, export it as a GIF, and make matching badges for your links (above). A local
-web editor shows every setting with a live preview.
+scripts and loads no fonts. Info lines can show live GitHub numbers, a contribution
+graph or heatmap, a language bar and icons for your tools. The window can look like
+macOS, Mac OS X, classic Mac OS or Windows 95 to 11. readmefetch can also print the
+same thing in your terminal, export it as a GIF, and make matching badges for your
+links (above). A local web editor shows every setting with a live preview.
 
 ## Quick start
 
@@ -31,6 +33,8 @@ readmefetch init --github YOUR_USERNAME   # writes readmefetch.toml from your pu
 readmefetch print                         # preview in the terminal
 readmefetch render                        # writes readmefetch.svg (and your badges)
 readmefetch web --open                    # or edit everything in the browser
+readmefetch icons python                  # find icons for your info lines and badges
+readmefetch windows                       # list the window styles
 ```
 
 Put the SVG in your profile README (the repository named after your username):
@@ -91,8 +95,10 @@ make web                               # the same, from a checkout
 ```
 
 A small local app in GitHub's look: every setting, with the README preview updating as
-you type, light and dark pages, a Replay button for the intro, a logo picker with
-thumbnails, a badge builder and a **Draw** tab for your own logo. You can type or paint
+you type, light and dark pages, a Replay button for the intro and an actual-size view.
+It has a logo picker with thumbnails, one-click GitHub lines, a searchable icon picker,
+window styles with their matching presets, a badge builder with a gallery of every
+style, and a **Draw** tab for your own logo. You can type or paint
 in colour, add frames, paste ASCII art or start from a built-in logo. Then
 download the SVG, the config, a GIF or the README and workflow snippets. **Save**
 writes the config (the old one is kept as `readmefetch.toml.bak`), the SVG and the badges.
@@ -109,12 +115,12 @@ requests from other sites, and other hosts can't reach it.
 | `user`, `host` | `"user"`, `"github"` | shown as `user@host` in the prompt, title bar and info header |
 | `cwd` | `"~"` | the directory in the prompt and title bar |
 | `command` | `"readmefetch"` | what gets typed |
-| `theme` | `"github-dark"` | `github-dark`, `github-light`, `dracula`, `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `nord` (`readmefetch themes`) |
+| `theme` | `"github-dark"` | `github-dark`, `github-light`, `dracula`, `tokyo-night`, `catppuccin-mocha`, `gruvbox-dark`, `nord`, and the classic terminals `terminal-basic`, `terminal-pro`, `classic-mac`, `campbell`, `powershell`, `cmd` (`readmefetch themes`) |
 | `logos` | `["tux"]` | logos shown in turn; `readmefetch logos` lists them |
 | `seconds_per_logo` | `5` | how long each logo stays |
 | `info` | `[]` | the lines on the right (see below) |
 | `uptime_since` | none | date for `{uptime}`, e.g. `2021-05-01` |
-| `github` | none | username for the live numbers |
+| `github` | none | username for the live numbers and graphs |
 | `color_blocks` | `true` | the two rows of colour swatches |
 | `initials` | first letters of `user` and `host` | printed on the drone's camera |
 | `output` | `"readmefetch.svg"` | relative to the config file |
@@ -123,7 +129,8 @@ requests from other sites, and other hosts can't reach it.
 | `[intro]` | | how the output appears on a visit (see below) |
 | `[cursor]` | | `style` (`block`, `bar`, `underline`), `blink` (`true`), `period` (`1.1` s), `color` (`"fg"`) |
 | `[prompt]` | | `format` (`"{user}@{host}:{cwd}$ "`), `user_color` (`"green"`), `cwd_color` (`"blue"`) |
-| `[window]` | | `title` (`"{user}@{host}: {cwd}"`, `""` for none), `buttons` (`true`: the three dots) |
+| `[window]` | | `style` (`"macos"`, see [Window styles](#window-styles)), `title` (`"{user}@{host}: {cwd}"`, `""` for none), `buttons` (`true`) |
+| `[metrics]` | | the GitHub graphs: `weeks` (`26`), `languages` (`4`), `bar_width` (`30`), `colors` (5 colours), `exclude` (languages to leave out) |
 | `[logo.NAME]` | | a custom logo, or settings for a built-in one (see below) |
 | `[badges]`, `[[badge]]` | | badges for your links (see below) |
 
@@ -143,12 +150,99 @@ command_speed = 12.5       # characters per second for the command
 With `scope = "all"` the first logo is typed in, so it skips its usual entrance once.
 
 **Info lines.** `"Key: value"` prints the key in the logo's colour, a line without a
-`Key: ` prefix prints as plain text, and `""` leaves a blank line. Placeholders:
-`{uptime}`, `{repos}`, `{stars}`, `{followers}`, `{contributions}` (needs a token: the
-Action passes one, and locally `GITHUB_TOKEN`, `GH_TOKEN` or `gh auth login` work),
-`{user}`, `{host}` and `{year}`. Write `{{` and `}}` for literal braces.
+`Key: ` prefix prints as plain text, and `""` leaves a blank line. `{user}`, `{host}`,
+`{cwd}`, `{uptime}` and `{year}` always work; the GitHub ones are below. `:name:` draws
+an icon (see [Icons](#icons)). Write `{{` and `}}` for literal braces.
 
 **Colours** are theme names (`red`, `bright-green`, `accent`, `fg`, `dim`, ...) or `#rrggbb`.
+
+### GitHub numbers and graphs
+
+Set `github = "your-username"` and use these in info lines (and in badges, see below):
+
+| Placeholder | | Token |
+| --- | --- | --- |
+| `{repos}`, `{stars}`, `{forks}` | public repositories, and the stars and forks of the ones you own (not your forks) | |
+| `{followers}`, `{following}`, `{gists}`, `{joined}` | from your profile; `{joined}` is the year | |
+| `{prs}`, `{issues}` | pull requests and issues you opened | |
+| `{contributions}`, `{commits}`, `{reviews}` | in the last year, as on your profile | yes |
+| `{streak}`, `{longest_streak}` | days in a row with a contribution | yes |
+| `{top_language}` | your most-used language | |
+| `{graph}` | the contribution calendar as one line of bars, a week per bar | yes |
+| `{heatmap}` | the calendar as squares, four lines tall (keep it on a line of its own) | yes |
+| `{langbar}` | a bar split by language, in GitHub's language colours | |
+| `{languages}` | a legend: `● Python 46%  ● TypeScript 27%  …` | |
+
+Numbers get thousands separators (`1,234`). "Token" means the GraphQL API: the Action
+passes one, and locally `GITHUB_TOKEN`, `GH_TOKEN` or `gh auth login` work. Without a
+token those numbers show `?`, the graphs are empty, and the language mix is estimated
+from each repository's main language. `--offline` (and the web editor with **Live GitHub data** off) uses zeros and
+made-up graphs, so you can see the layout.
+
+```toml
+info = [
+  ":repo: Repos: {repos} · :star: {stars}",
+  "Activity: {graph}",
+  "{heatmap}",
+  "Languages: {langbar}",
+  "{languages}",
+]
+
+[metrics]
+weeks = 26                 # how much of the calendar {graph} and {heatmap} show (4 to 53)
+languages = 4              # how many {languages} lists; the rest are "Other"
+bar_width = 30             # {langbar}'s width in characters
+# colors = ["#161b22", "#0e4429", "#006d32", "#26a641", "#39d353"]  # empty, then 4 levels
+# exclude = ["HTML", "Jupyter Notebook"]
+```
+
+The graphs are drawn shapes, not text, so they line up in any font. `readmefetch print`
+draws them with block characters.
+
+### Icons
+
+`:name:` in an info line (or a badge's `icon`) draws an icon. About 500 are included:
+GitHub's [Octicons](https://primer.style/octicons) (`:repo:`, `:star:`, `:git-pull-request:`,
+`:flame:`, ...), brand logos from [Simple Icons](https://simpleicons.org) and
+[Devicon](https://devicon.dev) (`:python:`, `:rust:`, `:docker:`, `:neovim:`, ...) and
+Linux distributions and desktops from [font-logos](https://github.com/lukas-w/font-logos)
+(`:archlinux:`, `:gnome:`, ...). Nerd Font names work too: `:nf-dev-python:`,
+`:nf-oct-repo:`, `:nf-linux-archlinux:`.
+
+```sh
+readmefetch icons            # every icon, by set
+readmefetch icons rust       # search
+readmefetch print --nerd-font   # print them as Nerd Font glyphs in your terminal
+```
+
+They're drawn as SVG shapes in the text colour, so visitors see them without a Nerd
+Font. An unknown `:nf-...:` name is an error; other `:words:` (like `12:30:45`) stay text.
+Brand logos are their owners' trademarks; see [CREDITS.md](CREDITS.md#icons).
+
+### Window styles
+
+```toml
+[window]
+style = "win95"
+```
+
+| Style | |
+| --- | --- |
+| `macos` | traffic lights and a centred title (the default) |
+| `tahoe` | macOS Tahoe 26: Liquid Glass, rounder and lighter |
+| `aqua` | Mac OS X: glossy gel buttons on pinstripes |
+| `platinum` | Mac OS 9: a ridged grey title bar |
+| `system7` | System 7: black-and-white stripes |
+| `win11` | Windows 11: a Mica bar with its controls on the right |
+| `win7` | Windows 7: Aero glass and a red close button |
+| `winxp` | Windows XP: Luna's blue title bar |
+| `win95` | Windows 95/98: grey bevels and a navy title bar |
+| `none` | no frame |
+
+A style changes only the frame. Each one also has a preset with the prompt, theme,
+title and cursor of that system's own terminal (`readmefetch windows` lists them):
+`win95` is `C:\WINDOWS>` on the `cmd` theme in an "MS-DOS Prompt" window. The web
+editor's **Window** tab can apply just the prompt or the whole preset, with an Undo.
 
 ## Logos
 
@@ -241,9 +335,21 @@ readmefetch badges --html   # the same lines as <a><img></a>, for inside <p alig
 
 `readmefetch render` and the Action write them too.
 
-- **Styles:** `flat`, `flat-square`, `plastic`, `for-the-badge` and `pill` have the familiar
-  badge shapes. `terminal` is a tiny prompt in your theme with a blinking cursor (it stays
-  still for visitors who prefer reduced motion). The demo above shows one of each.
+- **Styles:**
+  - **Classic:** `flat`, `flat-square`, `plastic`, `for-the-badge` and `pill` have the
+    familiar badge shapes. `terminal` is a tiny prompt in your theme with a blinking cursor
+    (it stays still for visitors who prefer reduced motion).
+  - **Modern:** `outline`, `gradient`, `glow` and `glass`.
+  - **GitHub:** `social` looks like GitHub's own buttons, with a counter: `Star | 128`.
+  - **Window styles:** `macos`, `tahoe`, `aqua`, `platinum`, `system7`, `win11`, `win7`,
+    `winxp` and `win95` match the [window styles](#window-styles), and `window` follows
+    whichever one `[window] style` picks.
+
+  `readmefetch badges --help` lists them, and the web editor's **Badges** tab shows a
+  gallery of every style with your own text.
+- **Live numbers:** `label` and `message` can use the GitHub numbers, like
+  `message = "{stars}"` or `"{followers} followers"`. The Action keeps them current.
+  The graphs (`{graph}`, `{heatmap}`, `{langbar}`, `{languages}`) only go in info lines.
 - **Settings:** `label`, `message`, `link`, `color`, `label_color` (default grey),
   `icon`, `style`, `file` (default: from the label) and `cursor` (terminal style only).
 - **Text:** it picks white or near-black, whichever reads better on the colour. Widths come
@@ -251,9 +357,17 @@ readmefetch badges --html   # the same lines as <a><img></a>, for inside <p alig
   whatever fonts the viewer has.
 - **Icons:** `globe`, `mail`, `link`, `code`, `terminal`, `game`, `cards`, `tree`,
   `briefcase`, `heart`, `star`, `home`, `rocket` and `book` are readmefetch's own line
-  drawings (MIT). For a brand logo, paste the `d` attribute of a 24×24 SVG path (for
-  example from [Simple Icons](https://simpleicons.org), whose icons are CC0). Brand logos
-  remain their owners' trademarks.
+  drawings (MIT). Any name from [Icons](#icons) works too (`icon = "python"`), or paste the
+  `d` attribute of your own 24×24 SVG path. Brand logos remain their owners' trademarks.
+
+```toml
+[[badge]]
+label = "Stars"
+message = "{stars}"
+link = "https://github.com/you?tab=repositories"
+icon = "star"
+style = "social"
+```
 
 ## How it works
 
@@ -280,7 +394,7 @@ make setup     # a .venv with readmefetch, Pillow and ruff
 make check     # ruff, a syntax check of the web app's JS, and the tests
 make web       # the web editor (CONFIG=path/to/readmefetch.toml, PORT=8765)
 make demo      # regenerate examples/demo.svg, demo.gif and the example badges
-make vendor    # refresh third-party art from its pinned commits
+make vendor    # refresh third-party art and icons from their pinned releases
 make           # every target
 ```
 
@@ -290,6 +404,6 @@ test runs when Pillow and a browser are present.
 ## Credits and licence
 
 The code is [MIT](LICENSE). Bundled art keeps its own licence: MIT (fastfetch,
-neofetch, onefetch), BSD-3-Clause (FIGlet fonts), CC0 (Tubes font) and CC BY-SA 3.0
-(Candy Box 2 art). [CREDITS.md](CREDITS.md) names every artist and licence and
+neofetch, onefetch, Octicons, Devicon), BSD-3-Clause (FIGlet fonts), CC0 (Tubes font,
+Simple Icons), the Unlicense (font-logos) and CC BY-SA 3.0 (Candy Box 2 art). [CREDITS.md](CREDITS.md) names every artist and licence and
 lists what readmefetch changed in each piece.

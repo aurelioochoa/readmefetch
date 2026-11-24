@@ -6,6 +6,8 @@
  */
 "use strict";
 
+const API_VERSION = 2; // must match web.py's API_VERSION: what /api/state sends
+
 // ---- small helpers ------------------------------------------------------------------
 
 function h(tag, props, ...kids) {
@@ -28,6 +30,18 @@ function h(tag, props, ...kids) {
   return el;
 }
 const $ = (sel) => document.querySelector(sel);
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// An icon from a {box, svg} record (the vendored icon sets), drawn in the current text colour.
+function svgIcon(rec, cls = "oct") {
+  const el = document.createElementNS(SVG_NS, "svg");
+  el.setAttribute("viewBox", rec.box.join(" "));
+  el.setAttribute("aria-hidden", "true");
+  el.setAttribute("class", cls);
+  el.innerHTML = rec.svg;
+  return el;
+}
+const oct = (name) => (S.meta?.ui_icons?.[name] ? svgIcon(S.meta.ui_icons[name]) : null);
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const sentence = (t) => (t ? t[0].toUpperCase() + t.slice(1) + "." : "");
 
@@ -60,12 +74,14 @@ async function copy(text, what) {
 }
 
 let flashTimer = 0;
-function flash(message, kind = "error", ms = 0) {
+function flash(message, kind = "error", ms = 0, action = null) {
   const el = $("#flash");
   clearTimeout(flashTimer);
+  if (!message && S.meta && S.meta.api !== API_VERSION) message = STALE_SERVER; // keep that one up: nothing works right
   if (!message) { el.hidden = true; return; }
   el.className = `flash ${kind}`;
-  el.textContent = message;
+  el.replaceChildren(h("span", { class: "flash-text", text: message }),
+    ...(action ? [h("button", { type: "button", class: "btn btn-sm", onclick: () => { el.hidden = true; action.onclick(); } }, action.label)] : []));
   el.hidden = false;
   if (ms) flashTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
@@ -103,12 +119,17 @@ const S = {
 };
 
 const TABS = [
-  ["profile", "Profile"], ["info", "Info"], ["logos", "Logos"], ["motion", "Motion"], ["look", "Look"], ["badges", "Badges"],
-  ["editor", "Draw"],
+  ["profile", "Profile", "person"], ["info", "Info", "list-unordered"], ["logos", "Logos", "image"], ["motion", "Motion", "play"],
+  ["look", "Look", "paintbrush"], ["window", "Window", "browser"], ["badges", "Badges", "tag"], ["editor", "Draw", "pencil"],
 ];
 
+function setDirty(v) {
+  S.dirty = v;
+  document.body.classList.toggle("is-dirty", v);
+}
+
 function changed() {
-  S.dirty = true;
+  setDirty(true);
   clearTimeout(S.timer);
   S.timer = setTimeout(renderPreview, 250);
 }
@@ -116,11 +137,24 @@ function changed() {
 function refresh() {
   const panel = $("#panel");
   const top = panel.scrollTop;
-  const kids = TAB_VIEWS[S.tab]();
-  panel.replaceChildren(...[kids].flat());
+  let kids;
+  try {
+    kids = TAB_VIEWS[S.tab]();
+  } catch (e) {
+    // Never fail silently: say which tab broke and why, and keep the rest of the app usable.
+    console.error(e);
+    const label = (TABS.find(([name]) => name === S.tab) || [, S.tab])[1];
+    kids = h("div", { class: "section" }, callout("danger", "alert",
+      `The ${label} tab couldn't open: ${e.message}. `,
+      S.meta.api === API_VERSION ? "Please report this." : STALE_SERVER));
+  }
+  panel.replaceChildren(...[kids].flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
   panel.scrollTop = top;
   if (S.tab === "badges" && S.last) drawBadgePreviews();
 }
+
+const STALE_SERVER = "The readmefetch server running this page is older than the page. Stop it (Ctrl+C), "
+  + "start `readmefetch web` again, then reload this tab.";
 
 function showTab(name) {
   S.tab = name;
@@ -161,6 +195,15 @@ const resolveColor = (c) => resolveIn(c, palette());
 function section(title, lead, ...kids) {
   return h("section", { class: "section" }, h("h2", { text: title }), lead ? h("p", { class: "lead", text: lead }) : null, kids);
 }
+// A section whose heading has something on its right (a button, a count).
+function sectionWith(title, lead, aside, ...kids) {
+  return h("section", { class: "section" },
+    h("div", { class: "section-head" }, h("h2", { text: title }), h("span", { class: "spacer" }), aside),
+    lead ? h("p", { class: "lead", text: lead }) : null, kids);
+}
+function callout(kind, icon, ...kids) {
+  return h("div", { class: `callout${kind ? " " + kind : ""}` }, oct(icon), h("p", {}, kids));
+}
 let fieldIds = 0;
 function field(label, control, note) {
   // Only a lone input gets a real <label>: a label around a group would forward clicks to its first button.
@@ -175,7 +218,7 @@ const fieldRow = (...kids) => h("div", { class: "field-row" }, kids);
 
 function text(obj, key, opts = {}) {
   return h("input", {
-    class: `form-control${opts.mono ? " mono" : ""}`, type: opts.type || "text", value: obj[key] ?? "",
+    class: `form-control${opts.mono ? " mono" : ""}`, type: opts.type || "text", value: obj[key] ?? "", id: opts.id,
     placeholder: opts.placeholder, maxlength: opts.maxlength, spellcheck: opts.mono ? "false" : null,
     oninput: (e) => { obj[key] = e.target.value; if (opts.after) opts.after(); changed(); },
     onfocus: (e) => { S.focus = e.target; },
@@ -260,8 +303,8 @@ function profileTab() {
         field("Typed command", text(c, "command", { mono: true }), "What types itself at the prompt"),
       )),
     section("GitHub", null,
-      field("GitHub username", text(c, "github", { placeholder: "your-username" }),
-        "Turns on {repos}, {stars}, {followers} and {contributions}."),
+      field("GitHub username", text(c, "github", { placeholder: "your-username", id: "f-github" }),
+        "Turns on the live numbers, graphs and languages: see Info → GitHub."),
       fieldRow(
         field("Uptime counts from", text(c, "uptime_since", { type: "date" }), "Used by {uptime}"),
         field("Drone initials", text(c, "initials", { maxlength: 2, placeholder: "auto" }), "Two letters on the drone"),
@@ -273,9 +316,75 @@ function profileTab() {
   ];
 }
 
+// ---- icons ------------------------------------------------------------------------------
+
+async function iconCatalog() {
+  if (!S.icons) {
+    const res = await api("/api/icons");
+    S.icons = Array.isArray(res) ? res : [];
+  }
+  return S.icons;
+}
+
+// A searchable grid of the icon library; onPick(icon) gets the catalogue entry.
+function iconPicker(onPick) {
+  const grid = h("div", { class: "icon-grid", role: "list", "aria-label": "Icons" });
+  const search = h("input", {
+    class: "form-control", type: "search", placeholder: "Search icons: python, star, arch, nf-oct…", value: S.iconSearch || "",
+    "aria-label": "Search icons",
+  });
+  function draw() {
+    const q = search.value.trim().toLowerCase().replace(/^:|:$/g, "");
+    S.iconSearch = search.value;
+    const items = (S.icons || []).filter((i) => !q || i.name.includes(q) || i.title.toLowerCase().includes(q) || i.nerd.includes(q) || i.aliases.some((a) => a.includes(q)));
+    const kids = [];
+    let group = null;
+    for (const i of items) {
+      if (i.group !== group) { group = i.group; kids.push(h("div", { class: "icon-group-title", text: group })); }
+      kids.push(h("button", {
+        type: "button", class: "icon-cell", role: "listitem",
+        title: `:${i.name}:${i.aliases.length ? ` (also ${i.aliases.map((a) => `:${a}:`).join(" ")})` : ""}${i.nerd ? `  ·  :${i.nerd}:` : ""}\n${i.title}`, onclick: () => onPick(i),
+      }, svgIcon(i, ""), h("span", { text: i.name })));
+    }
+    grid.replaceChildren(...(kids.length ? kids : [h("p", { class: "icon-empty", text: S.icons ? `No icon matches “${q}”.` : "Loading icons…" })]));
+  }
+  search.addEventListener("input", draw);
+  draw();
+  if (!S.icons) iconCatalog().then(draw);
+  return h("div", {}, h("div", { class: "icon-tools" }, h("div", { class: "input-icon" }, oct("search"), search)), grid);
+}
+
+function pickIconDialog(onPick) {
+  dialog("Choose an icon", [
+    h("p", { class: "muted small", text: "Octicons (MIT), Simple Icons (CC0), font-logos (Unlicense) and Devicon (MIT). Brand logos are their owners' trademarks." }),
+    iconPicker((i) => { onPick(i); $("#dialog").close(); }),
+  ], [{ label: "Cancel" }]);
+  $("#dialog").classList.add("wide");
+  $("#dialog").addEventListener("close", () => $("#dialog").classList.remove("wide"), { once: true });
+}
+
+// ---- info ---------------------------------------------------------------------------------
+
+const GH_LINES = [
+  ["repo", "Repositories", ":repo: Repos: {repos}"],
+  ["star", "Stars", ":star: Stars: {stars}"],
+  ["people", "Followers", ":people: Followers: {followers}"],
+  ["git-commit", "Commits", ":git-commit: Commits: {commits}", true],
+  ["git-pull-request", "Pull requests", ":git-pull-request: PRs: {prs}"],
+  ["issue-opened", "Issues", ":issue-opened: Issues: {issues}"],
+  ["graph", "Contributions", ":graph: Contributions: {contributions}", true],
+  ["flame", "Streak", ":flame: Streak: {streak} days (best {longest_streak})", true],
+  ["mark-github", "Summary", ":mark-github: GitHub: {repos} repos · {stars} stars · {followers} followers"],
+  ["code", "Top language", ":code: Top language: {top_language}"],
+  ["graph", "Activity bars", "Activity: {graph}", true],
+  ["calendar", "Heatmap (4 lines)", "{heatmap}", true],
+  ["sliders", "Language bar", "Languages: {langbar}"],
+  ["list-unordered", "Language legend", "{languages}"],
+];
+
 function infoTab() {
   const lines = S.cfg.info;
-  const list = h("ol", { class: "list", "data-empty": "No lines yet." }, lines.map((value, i) => h("li", { class: "line-row" },
+  const list = h("ol", { class: "list", "data-empty": "No lines yet. Add one, or pick a GitHub line below." }, lines.map((value, i) => h("li", { class: "line-row" },
     h("span", { class: "num", text: i + 1 }),
     h("input", {
       class: "form-control mono", value, placeholder: "(blank line)", "aria-label": `Line ${i + 1}`, spellcheck: "false",
@@ -292,17 +401,58 @@ function infoTab() {
     const inputs = document.querySelectorAll(".line-row input");
     inputs[inputs.length - 1]?.focus();
   };
-  const chips = Object.entries(S.meta.placeholders).map(([name, help]) => h("button", {
-    type: "button", class: "chip", title: help,
-    onclick: () => insertAtFocus(`{${name}}`, (t) => { lines.push(`Key: ${t}`); refresh(); changed(); }),
-  }, `{${name}}`));
+  const groups = [
+    ["You", Object.keys(S.meta.placeholders).filter((n) => !S.meta.github_keys.includes(n)), ""],
+    ["GitHub numbers", S.meta.github_keys.filter((n) => !S.meta.visuals.includes(n)), "live"],
+    ["GitHub visuals (a line of their own reads best)", S.meta.visuals, "visual"],
+  ];
+  const chips = groups.map(([title, names, kind]) => h("div", { class: "chip-group" }, h("h3", { text: title }),
+    h("div", { class: "chips" }, names.map((name) => h("button", {
+      type: "button", class: `chip${kind ? " " + kind : ""}`, title: S.meta.placeholders[name],
+      onclick: () => insertAtFocus(`{${name}}`, (tok) => { lines.push(`Key: ${tok}`); refresh(); changed(); }),
+    }, `{${name}}`)))));
+
+  const noUser = !S.cfg.github;
+  const ghButtons = h("div", { class: "gh-lines" }, GH_LINES.map(([icon, title, line, token]) => h("button", {
+    type: "button", class: `gh-line${token ? " token" : ""}`, title: `Adds: ${line}`, onclick: add(line),
+  }, h("strong", {}, oct(icon), title), h("code", { text: line }))));
+
+  const mt = (S.cfg.metrics ||= {});
+  const md = S.meta.metrics_defaults;
+  const colors = Array.isArray(mt.colors) && mt.colors.length === 5 ? mt.colors : null;
+  const greens = (palette().bg && parseInt(palette().bg.slice(1, 3), 16) > 140)
+    ? ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"] : ["#161b22", "#0e4429", "#006d32", "#26a641", "#39d353"];
+  const swatches = h("div", { class: "swatches" }, (colors || greens).map((c, i) => h("input", {
+    type: "color", value: c, title: i === 0 ? "No contributions" : `Level ${i}`, "aria-label": i === 0 ? "Empty colour" : `Level ${i} colour`,
+    oninput: (e) => { const next = [...(colors || greens)]; next[i] = e.target.value; mt.colors = next; changed(); },
+  })), colors ? h("button", { type: "button", class: "btn btn-sm btn-invisible", onclick: () => { mt.colors = []; refresh(); changed(); } }, "GitHub's greens") : null);
+
+  const visualSettings = h("details", {}, h("summary", { text: "Graph and language settings" }), h("div", { style: { marginTop: "12px" } },
+    fieldRow(
+      field("Weeks shown", number(mt, "weeks", { min: 4, max: 53, step: 1, placeholder: String(md.weeks) }), "In {graph} and {heatmap}"),
+      field("Languages named", number(mt, "languages", { min: 1, max: 10, step: 1, placeholder: String(md.languages) }), "The rest become “Other”")),
+    fieldRow(
+      field("Language bar width", number(mt, "bar_width", { min: 6, max: 80, step: 1, placeholder: String(md.bar_width) }), "In characters"),
+      field("Leave out", h("input", {
+        class: "form-control", value: (mt.exclude || []).join(", "), placeholder: "HTML, Jupyter Notebook",
+        oninput: (e) => { mt.exclude = e.target.value.split(",").map((s) => s.trim()).filter(Boolean); changed(); },
+      }), "Languages to skip, comma separated")),
+    field("Graph colours", swatches, "Empty, then four levels of activity")));
+
   return [
-    section("Lines", "“Key: value” prints the key in the logo's colour. A line without a key prints as plain text, and an empty line leaves a gap.",
+    sectionWith("Lines", "“Key: value” prints the key in the logo's colour. A line without a key prints as plain text, and an empty line leaves a gap.",
+      h("span", { class: "muted small", text: `${lines.length} line${lines.length === 1 ? "" : "s"}` }),
       list,
       h("div", { class: "row-actions" },
-        h("button", { type: "button", class: "btn btn-sm", onclick: add("Key: value") }, "Add line"),
+        h("button", { type: "button", class: "btn btn-sm", onclick: add("Key: value") }, oct("plus"), "Add line"),
         h("button", { type: "button", class: "btn btn-sm", onclick: add("") }, "Add blank line"))),
-    section("Placeholders", "Click one to insert it at your cursor. Live ones need a GitHub username.", h("div", { class: "chips" }, chips),
+    section("GitHub", "One click adds a line with your live numbers or a graph. Lines marked “needs a token” use GitHub's GraphQL API: the Action has one, and locally GITHUB_TOKEN or gh auth login work.",
+      noUser ? callout("warn", "alert", "These need your GitHub username. ",
+        h("button", { type: "button", class: "btn btn-sm btn-invisible", onclick: () => { showTab("profile"); setTimeout(() => document.querySelector("#f-github")?.focus(), 50); } }, "Set it in Profile")) : null,
+      ghButtons, h("div", { style: { marginTop: "12px" } }, visualSettings)),
+    section("Icons", "Click one to put it at your cursor, like :repo: or :python:. They're drawn as shapes, so every visitor sees them (no Nerd Font needed). Nerd Font names like :nf-dev-python: work too.",
+      iconPicker((i) => insertAtFocus(`:${i.name}: `, (tok) => { lines.push(`${tok}Key: value`); refresh(); changed(); }))),
+    section("Placeholders", "Click one to insert it at your cursor. Green ones are live from GitHub; purple ones are drawn.", chips,
       h("p", { class: "hint" }, "Write {{ and }} for literal braces.")),
     section("Colour blocks", null,
       checkbox("Show the two rows of colour swatches under the info", () => S.cfg.color_blocks, (v) => { S.cfg.color_blocks = v; })),
@@ -451,13 +601,23 @@ function motionTab() {
   ];
 }
 
+function themeGroup(name, t) {
+  if (Object.values(S.meta.presets).some((p) => p.theme === name)) return "Classic terminals";
+  const bg = t.bg.replace("#", "");
+  const lum = (0.299 * parseInt(bg.slice(0, 2), 16) + 0.587 * parseInt(bg.slice(2, 4), 16) + 0.114 * parseInt(bg.slice(4, 6), 16)) / 255;
+  return lum > 0.5 ? "Light" : "Dark";
+}
+
 function lookTab() {
   const c = S.cfg;
   c.colors ||= {};
-  const themes = h("div", { class: "themes" }, Object.entries(S.meta.themes).map(([name, t]) => h("button", {
-    type: "button", class: "theme-card", "aria-pressed": String(c.theme === name), style: { background: t.bg, color: t.fg },
-    onclick: () => { c.theme = name; refresh(); changed(); },
-  }, name, h("span", { class: "sw" }, ["red", "green", "yellow", "blue", "magenta", "cyan"].map((k) => h("i", { style: { background: t[k] } }))))));
+  const grouped = {};
+  for (const [name, t] of Object.entries(S.meta.themes)) (grouped[themeGroup(name, t)] ||= []).push([name, t]);
+  const themes = ["Dark", "Light", "Classic terminals"].filter((g) => grouped[g]).map((g) => h("div", { class: "picker-group" },
+    h("h3", { text: g }), h("div", { class: "themes" }, grouped[g].map(([name, t]) => h("button", {
+      type: "button", class: "theme-card", "aria-pressed": String(c.theme === name), style: { background: t.bg, color: t.fg },
+      onclick: () => { c.theme = name; refresh(); changed(); },
+    }, name, h("span", { class: "sw" }, ["red", "green", "yellow", "blue", "magenta", "cyan"].map((k) => h("i", { style: { background: t[k] } }))))))));
 
   const base = ["accent", "fg", "dim", "bg"];
   const keys = [...new Set([...base, ...Object.keys(c.colors)])];
@@ -471,20 +631,73 @@ function lookTab() {
   });
 
   const p = (c.prompt ||= {});
-  const w = (c.window ||= {});
   const chips = ["user", "host", "cwd"].map((n) => h("button", { type: "button", class: "chip", onclick: () => insertAtFocus(`{${n}}`) }, `{${n}}`));
   return [
-    section("Theme", null, themes),
+    section("Theme", "The terminal's colours. Classic terminals go with the window styles' presets (Window tab).", themes),
     section("Colours", "Theme colour names (red, bright-blue, accent, …) or #hex. Empty uses the theme's.", overrides,
       h("div", { style: { marginTop: "8px" } }, addOverride)),
     section("Prompt", null,
-      field("Format", text(p, "format", { mono: true }), "Try “{cwd} ❯ ” or “[{user}@{host} {cwd}]$ ”"),
+      field("Format", text(p, "format", { mono: true }), "Try “{cwd} ❯ ” or “[{user}@{host} {cwd}]$ ”, or a window style's own prompt (Window tab)"),
       h("div", { class: "chips", style: { marginBottom: "14px" } }, chips),
       fieldRow(field("user@host colour", colorField(() => p.user_color, (v) => { p.user_color = v || "green"; }, { placeholder: "green" })),
         field("Directory colour", colorField(() => p.cwd_color, (v) => { p.cwd_color = v || "blue"; }, { placeholder: "blue" })))),
-    section("Window", null,
+  ];
+}
+
+// ---- window --------------------------------------------------------------------------------
+
+const WINDOW_GROUPS = [["macOS", ["macos", "tahoe", "aqua", "platinum", "system7"]], ["Windows", ["win11", "win7", "winxp", "win95"]],
+  ["Other", ["none"]]];
+
+function applyPreset(style, full) {
+  const p = S.meta.presets[style];
+  const label = S.meta.window_labels[style];
+  const before = clone({ prompt: S.cfg.prompt || {}, theme: S.cfg.theme, window: S.cfg.window || {}, cursor: S.cfg.cursor || {} });
+  S.cfg.prompt = { ...(S.cfg.prompt || {}), format: p.prompt, user_color: p.user_color, cwd_color: p.cwd_color };
+  if (full) {
+    S.cfg.theme = p.theme;
+    S.cfg.window = { ...(S.cfg.window || {}), style, title: p.title };
+    S.cfg.cursor = { ...(S.cfg.cursor || {}), style: p.cursor };
+  }
+  refresh();
+  changed();
+  flash(full ? `Applied the ${label} preset: its prompt, the ${p.theme} theme, the title and ${/^[aeiou]/.test(p.cursor) ? "an" : "a"} ${p.cursor} cursor.`
+    : `The prompt is now “${p.prompt}”.`, "success", 10000,
+  { label: "Undo", onclick: () => { Object.assign(S.cfg, before); refresh(); changed(); } });
+}
+
+function windowTab() {
+  const w = (S.cfg.window ||= {});
+  const cur = w.style || "macos";
+  const card = (name) => h("button", {
+    type: "button", class: "pick-card", "aria-pressed": String(cur === name), title: S.meta.window_styles[name],
+    onclick: () => { w.style = name; refresh(); changed(); },
+  }, h("div", { class: "art" }, h("img", {
+    src: `/api/frame?${new URLSearchParams({ style: name, theme: S.cfg.theme, title: "Terminal" })}`, alt: "", loading: "lazy",
+  })), h("strong", { text: S.meta.window_labels[name] }), h("span", { class: "sub", text: S.meta.window_styles[name].split(": ").slice(1).join(": ") }));
+
+  const p = S.meta.presets[cur];
+  const label = S.meta.window_labels[cur];
+  const presetBar = p ? h("div", { class: "preset-bar" },
+    h("div", { class: "preset-text" }, oct("sparkle-fill"), h("div", {},
+      h("div", {}, h("strong", { text: `${label}'s own terminal` })),
+      h("div", { class: "muted small" }, "Prompt ", h("code", { text: p.prompt }), `, the ${p.theme} theme, the title “${p.title}” and ${/^[aeiou]/.test(p.cursor) ? "an" : "a"} ${p.cursor} cursor.`))),
+    h("div", { class: "row-actions", style: { margin: 0 } },
+      h("button", { type: "button", class: "btn btn-sm", onclick: () => applyPreset(cur, false) }, oct("terminal"), "Use its prompt"),
+      h("button", { type: "button", class: "btn btn-sm btn-primary", onclick: () => applyPreset(cur, true) }, oct("zap"), "Apply the full preset"))) : null;
+
+  const chips = ["user", "host", "cwd"].map((n) => h("button", { type: "button", class: "chip", onclick: () => insertAtFocus(`{${n}}`) }, `{${n}}`));
+  return [
+    section("Window style", "The frame around the terminal. Pick one, then keep your own prompt or take that system's.",
+      WINDOW_GROUPS.map(([g, names]) => h("div", { class: "picker-group" }, h("h3", { text: g }), h("div", { class: "card-grid" }, names.map(card)))),
+      presetBar),
+    section("Title bar", null,
       field("Title", text(w, "title", { mono: true }), "Empty hides it. Placeholders: {user} {host} {cwd}"),
-      checkbox("Red, yellow and green buttons", () => w.buttons !== false, (v) => { w.buttons = v; })),
+      h("div", { class: "chips", style: { marginBottom: "14px" } }, chips),
+      checkbox(cur.startsWith("win") ? "Minimise, maximise and close buttons" : "Window buttons (the traffic lights on a Mac)",
+        () => w.buttons !== false, (v) => { w.buttons = v; })),
+    section("Badges", null, h("p", { class: "muted small", style: { margin: 0 } },
+      "Badges can match the window too: give them the style “window” in the Badges tab.")),
   ];
 }
 
@@ -886,15 +1099,12 @@ function editorTab() {
 
 // ---- badges -------------------------------------------------------------------------------
 
-const badgeUrls = [];
+// data: URLs, not blob: ones, so an image still loading when the preview redraws can't lose its source.
 function badgeImg(svg, alt) {
-  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-  badgeUrls.push(url);
-  return h("img", { src: url, alt });
+  return h("img", { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, alt });
 }
 
 function drawBadgePreviews() {
-  while (badgeUrls.length) URL.revokeObjectURL(badgeUrls.pop());
   const list = S.last?.badges || [];
   const row = $("#preview-badges");
   row.replaceChildren(...list.map((b) => (b.link ? h("a", { href: b.link, target: "_blank", rel: "noopener" }, badgeImg(b.svg, b.text)) : badgeImg(b.svg, b.text))));
@@ -907,22 +1117,74 @@ function drawBadgePreviews() {
   if (copyBtn) copyBtn.disabled = !list.length;
 }
 
+const PATH_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9eE.,+\-\s]+$/;
+function iconKind(icon) {
+  if (!icon) return "";
+  if (icon in S.meta.icons) return "builtin";
+  if (/^[a-z0-9][a-z0-9_#+-]*$/.test(icon)) return "library";
+  return PATH_RE.test(icon) ? "custom" : "library";
+}
+
+const sampleText = (s, def) => (s ? s.replace(/\{(\w+)\}/g, "128") : def);
+function badgePreviewUrl(style, b = {}) {
+  const d = S.cfg.badges || {};
+  return `/api/badge?${new URLSearchParams({
+    style, label: sampleText(b.label, "Label"), message: sampleText(b.message, "message"), color: resolveColor(b.color || d.color || "accent") || "#58a6ff",
+    icon: b.icon && !PATH_RE.test(b.icon) ? b.icon : "star", theme: S.cfg.theme, window: S.cfg.window?.style || "macos",
+  })}`;
+}
+
+// Mirrors badges.slug(): the file a badge is written to when it doesn't name one.
+const badgeSlug = (s) => String(s || "").normalize("NFKD").replace(/[^\x00-\x7f]/g, "").toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "badge";
+const badgeFile = (b) => b.file || `${badgeSlug(b.label || b.message)}.svg`;
+
+// Add a badge, naming its file so it can't collide with one already there (two "Website"s).
+function addBadge(b) {
+  const taken = new Set(S.cfg.badge.map(badgeFile));
+  if (taken.has(badgeFile(b))) {
+    const stem = badgeSlug(b.label || b.message);
+    let n = 2;
+    while (taken.has(`${stem}-${n}.svg`)) n++;
+    b.file = `${stem}-${n}.svg`;
+  }
+  S.cfg.badge.push(b);
+  S.openBadge = S.cfg.badge.length - 1;
+  refresh(); changed();
+}
+
 function badgesTab() {
   const c = S.cfg;
   c.badges ||= {};
   c.badge ||= [];
   const d = c.badges;
   const defStyle = d.style || "flat";
-  const iconOptions = [["", "No icon"], ...Object.keys(S.meta.icons).map((k) => [k, k]), ["custom", "Custom SVG path…"]];
+  const builtins = Object.keys(S.meta.icons);
   const styleOptions = (def) => [["", `Default (${def})`], ...Object.keys(S.meta.badge_styles).map((k) => [k, k])];
   const set = (b, key, value) => { if (value === "" || value === undefined) delete b[key]; else b[key] = value; };
+  const numbers = S.meta.github_keys.filter((n) => !S.meta.visuals.includes(n));
 
   const list = h("ol", { class: "list", "data-empty": "No badges yet." }, c.badge.map((b, i) => {
-    const custom = b.icon && !(b.icon in S.meta.icons);
-    const iconSel = select(iconOptions, () => (custom ? "custom" : b.icon || ""), (v) => {
-      if (v === "custom") { b.icon = b.icon && custom ? b.icon : "M12 2L2 22h20z"; } else set(b, "icon", v);
+    const kind = iconKind(b.icon);
+    const iconSel = select([["", "No icon"], ...builtins.map((k) => [k, `${k} (readmefetch)`]),
+      ["library", kind === "library" ? `${b.icon} (icon library)` : "From the icon library…"], ["custom", "Custom SVG path…"]],
+    () => (kind === "builtin" ? b.icon : kind), (v) => {
+      if (v === "library") { pickIconDialog((ic) => { b.icon = ic.name; refresh(); changed(); }); return; }
+      if (v === "custom") { b.icon = kind === "custom" ? b.icon : "M12 2L2 22h20z"; } else set(b, "icon", v);
       refresh();
     });
+    const labelIn = text(b, "label", { placeholder: "Portfolio" });
+    const messageIn = text(b, "message", { placeholder: "example.com or {stars}" });
+    const liveChips = h("div", { class: "chips", style: { marginBottom: "10px" } },
+      h("span", { class: "muted small", style: { alignSelf: "center" }, text: "Live numbers:" }),
+      numbers.map((n) => h("button", {
+        type: "button", class: "chip live", title: `${S.meta.placeholders[n]}. Goes in at your cursor in the label or message.`,
+        onmousedown: (e) => e.preventDefault(),
+        onclick: () => {
+          if (S.focus !== labelIn && S.focus !== messageIn) S.focus = messageIn;
+          insertAtFocus(`{${n}}`);
+        },
+      }, `{${n}}`)));
     return h("li", {},
       h("div", { class: "logo-head" },
         h("div", { class: "badge-slot", dataset: { badgePreview: i } }),
@@ -930,36 +1192,55 @@ function badgesTab() {
         iconButton("↑", "Earlier", i === 0, () => { move(c.badge, i, i - 1); refresh(); changed(); }),
         iconButton("↓", "Later", i === c.badge.length - 1, () => { move(c.badge, i, i + 1); refresh(); changed(); }),
         iconButton("×", "Remove", false, () => { c.badge.splice(i, 1); refresh(); changed(); })),
-      h("div", { class: "badge-fields" },
-        fieldRow(field("Label", text(b, "label", { placeholder: "Portfolio" })), field("Message", text(b, "message", { placeholder: "example.com" }))),
-        field("Link", text(b, "link", { placeholder: "https://…", type: "url" }), "Where it goes when clicked (in your README)"),
-        fieldRow(field("Colour", colorField(() => b.color, (v) => set(b, "color", v), { placeholder: d.color || "accent" })),
-          field("Label colour", colorField(() => b.label_color, (v) => set(b, "label_color", v), { placeholder: d.label_color || "#555555" }))),
-        fieldRow(field("Icon", iconSel), field("Style", select(styleOptions(defStyle), () => b.style || "", (v) => { set(b, "style", v); refresh(); }))),
-        custom ? field("SVG path (24×24)", text(b, "icon", { mono: true }), "The d attribute of a 24×24 icon, e.g. from simpleicons.org (brand logos are trademarks)") : null,
-        (b.style || defStyle) === "terminal" ? checkbox("Blinking cursor", () => b.cursor !== false, (v) => set(b, "cursor", v ? undefined : false)) : null,
-        field("File", text(b, "file", { mono: true, placeholder: "from the label" }), `Written to ${d.dir || "badges"}/`)));
+      h("details", { class: "badge-fields", open: c.badge.length <= 2 || S.openBadge === i, ontoggle: (e) => { if (e.target.open) S.openBadge = i; } },
+        h("summary", { text: "Edit" }),
+        h("div", { style: { marginTop: "10px" } },
+          fieldRow(field("Label", labelIn), field("Message", messageIn)),
+          liveChips,
+          field("Link", text(b, "link", { placeholder: "https://…", type: "url" }), "Where it goes when clicked (in your README)"),
+          fieldRow(field("Colour", colorField(() => b.color, (v) => set(b, "color", v), { placeholder: d.color || "accent" })),
+            field("Label colour", colorField(() => b.label_color, (v) => set(b, "label_color", v), { placeholder: d.label_color || "auto" }))),
+          fieldRow(field("Icon", iconSel), field("Style", select(styleOptions(defStyle), () => b.style || "", (v) => { set(b, "style", v); refresh(); }))),
+          kind === "library" ? h("div", { class: "row-actions", style: { marginTop: "-6px" } },
+            h("button", { type: "button", class: "btn btn-sm", onclick: () => pickIconDialog((ic) => { b.icon = ic.name; refresh(); changed(); }) }, "Change icon…")) : null,
+          kind === "custom" ? field("SVG path (24×24)", text(b, "icon", { mono: true }), "The d attribute of a 24×24 icon (brand logos are trademarks)") : null,
+          (b.style || defStyle) === "terminal" ? checkbox("Blinking cursor", () => b.cursor !== false, (v) => set(b, "cursor", v ? undefined : false)) : null,
+          field("File", text(b, "file", { mono: true, placeholder: "from the label" }), `Written to ${d.dir || "badges"}/`))));
   }));
 
-  const styles = Object.entries(S.meta.badge_styles);
+  const sample = c.badge[0] || {};
+  const groups = [
+    ["Classic", ["flat", "flat-square", "plastic", "for-the-badge", "pill", "terminal"]],
+    ["Modern", ["outline", "gradient", "glow", "glass", "social", "window"]],
+    ["Window styles", ["macos", "tahoe", "aqua", "platinum", "system7", "win11", "win7", "winxp", "win95"]],
+  ];
+  const gallery = groups.map(([g, names]) => h("div", { class: "picker-group" }, h("h3", { text: g }), h("div", { class: "style-grid" },
+    names.filter((n) => n in S.meta.badge_styles).map((name) => h("button", {
+      type: "button", class: "pick-card", "aria-pressed": String(defStyle === name), title: S.meta.badge_styles[name],
+      onclick: () => { d.style = name; refresh(); changed(); },
+    }, h("div", { class: "art" }, h("img", { src: badgePreviewUrl(name, sample), alt: "", loading: "lazy" })),
+    h("strong", { text: name }), h("span", { class: "sub", text: S.meta.badge_styles[name] }))))));
+
   return [
-    section("Badges", "Little buttons for your sites and contact, written as SVG files next to your config. Save writes them; the Action keeps them in sync.",
+    sectionWith("Badges", "Little buttons for your sites and contact, written as SVG files next to your config. Save writes them; the Action keeps them in sync.",
+      h("button", { type: "button", class: "btn btn-sm", id: "copy-badges", disabled: !(S.last?.badges || []).length,
+        onclick: () => copy(S.last.badge_snippet, "badge lines for your README") }, oct("copy"), "Copy README lines"),
       list,
       h("div", { class: "row-actions" },
-        h("button", { type: "button", class: "btn btn-sm", onclick: () => {
-          c.badge.push({ label: "Website", message: "example.com", link: "https://example.com", icon: "globe" });
-          refresh(); changed();
-        } }, "Add badge"),
-        h("button", { type: "button", class: "btn btn-sm", id: "copy-badges", disabled: !(S.last?.badges || []).length,
-          onclick: () => copy(S.last.badge_snippet, "badge lines for your README") }, "Copy README lines"))),
-    section("Defaults", "Used by every badge that doesn't set its own.",
-      field("Style", select(styles.map(([k, note]) => [k, `${k}: ${note}`]), () => defStyle, (v) => { d.style = v; refresh(); })),
+        h("button", { type: "button", class: "btn btn-sm",
+          onclick: () => addBadge({ label: "Website", message: "example.com", link: "https://example.com", icon: "globe" }) },
+        oct("plus"), "Add badge"),
+        S.cfg.github ? h("button", { type: "button", class: "btn btn-sm", onclick: () => addBadge({
+          label: "Stars", message: "{stars}", link: `https://github.com/${S.cfg.github}?tab=repositories`, icon: "star", style: "social",
+        }) }, oct("star"), "Add a live stars badge") : null)),
+    section("Style", "Every badge that doesn't pick its own uses this. “window” follows the Window tab.", gallery),
+    section("Defaults", null,
       fieldRow(field("Colour", colorField(() => d.color, (v) => set(d, "color", v), { placeholder: "accent" })),
         field("Folder", text(d, "dir", { mono: true, placeholder: "badges" }), "Next to the config file"))),
   ];
 }
 
-const TAB_VIEWS = { profile: profileTab, info: infoTab, logos: logosTab, motion: motionTab, look: lookTab, badges: badgesTab, editor: editorTab };
+const TAB_VIEWS = { profile: profileTab, info: infoTab, logos: logosTab, motion: motionTab, look: lookTab, window: windowTab, badges: badgesTab, editor: editorTab };
 
 // ---- preview and export --------------------------------------------------------------------
 
@@ -989,9 +1270,14 @@ async function renderPreview() {
   drawBadgePreviews();
   $("#copy-badge-lines").hidden = !(res.badges || []).length;
   const it = S.cfg.intro || {};
-  $("#meta").textContent = `${res.width} × ${res.height} px · intro ${res.intro.toFixed(1)} s (${it.scope || "info"}${it.scope === "none" ? "" : `, ${it.direction || "left-to-right"}`}) · `
-    + `${S.cfg.logos.length} logo${S.cfg.logos.length === 1 ? "" : "s"}, ${res.period.toFixed(0)} s per cycle · ${(res.svg.length / 1024).toFixed(0)} KB`
-    + (res.note ? ` · ${res.note}` : "");
+  const style = S.cfg.window?.style || "macos";
+  $("#meta").replaceChildren(...[
+    `${res.width} × ${res.height} px`,
+    (S.meta.window_labels || {})[style] || style,
+    `intro ${res.intro.toFixed(1)} s (${it.scope || "info"}${it.scope === "none" ? "" : `, ${it.direction || "left-to-right"}`})`,
+    `${S.cfg.logos.length} logo${S.cfg.logos.length === 1 ? "" : "s"}, ${res.period.toFixed(0)} s per cycle`,
+    `${(res.svg.length / 1024).toFixed(0)} KB`,
+  ].map((x) => h("span", { text: x })), ...(res.note ? [h("span", { class: "note", text: res.note })] : []));
   $("#readme-title").textContent = `${S.cfg.github || S.cfg.user} / README.md`;
 }
 
@@ -1055,7 +1341,7 @@ function save() {
     label: "Save", primary: true, onclick: async () => {
       const res = await api("/api/save", { config: S.cfg, live: S.live });
       if (!res.ok) { flash(res.error); return; }
-      S.dirty = false;
+      setDirty(false);
       S.meta.exists = true;
       const extra = res.badges ? `, ${res.badges} badge${res.badges === 1 ? "" : "s"} in ${res.badge_dir}` : "";
       flash(`Saved ${res.config_path} and ${res.svg_path}${extra}${res.backup ? ` (old config in ${res.backup})` : ""}.`, "success", 8000);
@@ -1069,19 +1355,25 @@ function save() {
 async function start() {
   const state = await api("/api/state");
   S.meta = state;
+  if (state.api !== API_VERSION) flash(STALE_SERVER);
   S.cfg = state.config;
   S.cfg.logo ||= {};
   S.live = localStorage.getItem("readmefetch.live") === null ? Boolean(S.cfg.github) : localStorage.getItem("readmefetch.live") === "1";
   $("#live").checked = S.live;
   $("#live").addEventListener("change", (e) => { S.live = e.target.checked; localStorage.setItem("readmefetch.live", S.live ? "1" : "0"); renderPreview(); });
-  $("#file-path").textContent = state.path;
-  $("#file-path").title = state.exists ? "The config file being edited" : "Doesn't exist yet: Save creates it";
+  $("#file-path-text").textContent = state.path;
+  $("#file-path").prepend(oct("pencil"));
+  $("#file-path").title = state.exists ? `Editing ${state.path}` : `${state.path} doesn't exist yet: Save creates it`;
+  $("#version").textContent = `v${state.version}`;
   $("#footer-note").textContent = `readmefetch ${state.version}. Logo credits are listed in CREDITS.md and kept inside every SVG.`;
 
   const mode = localStorage.getItem("readmefetch.mode") || "dark";
   const applyMode = (m) => {
     document.documentElement.dataset.colorMode = m;
-    $("#color-mode").textContent = m === "dark" ? "Light page" : "Dark page";
+    const label = m === "dark" ? "Light page" : "Dark page";
+    $("#color-mode").replaceChildren(oct(m === "dark" ? "sun" : "moon"));
+    $("#color-mode").setAttribute("aria-label", label);
+    $("#color-mode").title = `${label} (the editor and the README background)`;
     $("#color-mode").setAttribute("aria-pressed", String(m === "light"));
   };
   applyMode(mode);
@@ -1093,11 +1385,18 @@ async function start() {
 
   const names = h("datalist", { id: "color-names" }, Object.keys(state.themes["github-dark"]).map((k) => h("option", { value: k })));
   document.body.append(names);
-  $("#tabs").replaceChildren(...TABS.map(([name, label]) => h("button", {
+  $("#tabs").replaceChildren(...TABS.map(([name, label, icon]) => h("button", {
     type: "button", class: "tab", role: "tab", dataset: { tab: name }, "aria-selected": String(name === S.tab), onclick: () => showTab(name),
-  }, h("span", { text: label }))));
+  }, h("span", { class: "tab-inner" }, oct(icon), h("span", { text: label })))));
 
+  $("#replay").prepend(oct("sync"));
   $("#replay").addEventListener("click", () => S.last && setPreview(S.last.svg));
+  $("#zoom").prepend(oct("screen-full"));
+  $("#zoom").addEventListener("click", () => {
+    const on = $(".readme-body").classList.toggle("actual");
+    $("#zoom").setAttribute("aria-pressed", String(on));
+    $("#zoom").replaceChildren(oct(on ? "screen-normal" : "screen-full"), on ? "Fit" : "Actual size");
+  });
   $("#save").addEventListener("click", save);
   $("#dl-svg").addEventListener("click", () => S.last && download(baseName(S.cfg.output), S.last.svg, "image/svg+xml"));
   $("#dl-toml").addEventListener("click", () => S.last && download("readmefetch.toml", S.last.toml, "application/toml"));
@@ -1118,4 +1417,8 @@ async function start() {
   renderPreview();
 }
 
+// Anything that still throws (a click handler, a timer) shows up instead of doing nothing.
+const oops = (message) => flash(S.meta && S.meta.api !== API_VERSION ? STALE_SERVER : `Something went wrong: ${message}`);
+window.addEventListener("error", (e) => oops(e.message));
+window.addEventListener("unhandledrejection", (e) => oops(e.reason?.message || e.reason));
 start().catch((e) => flash(`Couldn't start: ${e.message}`));

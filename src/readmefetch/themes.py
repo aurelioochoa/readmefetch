@@ -52,6 +52,37 @@ THEMES = {
         ["#3b4252", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0", "#e5e9f0"],
         ["#4c566a", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#8fbcbb", "#eceff4"],
     ),
+    # The terminals the window styles' presets imitate.
+    "terminal-basic": _theme(  # macOS Terminal.app, Basic profile
+        "#ffffff", "#ececec", "#c8c8c8", "#000000", "#7f7f7f", "#0000b2",
+        ["#000000", "#990000", "#00a600", "#999900", "#0000b2", "#b200b2", "#00a6b2", "#bfbfbf"],
+        ["#666666", "#e50000", "#00d900", "#e5e500", "#0000ff", "#e500e5", "#00e5e5", "#e5e5e5"],
+    ),
+    "terminal-pro": _theme(  # macOS Terminal.app, Pro profile
+        "#1e1e1e", "#2b2b2b", "#3c3c3c", "#f2f2f2", "#8e8e8e", "#5a8cff",
+        ["#000000", "#990000", "#00a600", "#999900", "#2009db", "#b200b2", "#00a6b2", "#bfbfbf"],
+        ["#666666", "#e50000", "#00d900", "#e5e500", "#5a8cff", "#e500e5", "#00e5e5", "#e5e5e5"],
+    ),
+    "classic-mac": _theme(  # black on white, like MPW's Worksheet
+        "#ffffff", "#dddddd", "#000000", "#000000", "#555555", "#000000",
+        ["#000000", "#dd0806", "#1fb714", "#c0a000", "#0000d4", "#f20884", "#02abea", "#c0c0c0"],
+        ["#808080", "#ff6503", "#1fb714", "#fcf305", "#4700a5", "#f20884", "#02abea", "#ffffff"],
+    ),
+    "campbell": _theme(  # Windows Terminal's default
+        "#0c0c0c", "#202020", "#3a3a3a", "#cccccc", "#767676", "#3b78ff",
+        ["#0c0c0c", "#c50f1f", "#13a10e", "#c19c00", "#0037da", "#881798", "#3a96dd", "#cccccc"],
+        ["#767676", "#e74856", "#16c60c", "#f9f1a5", "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2"],
+    ),
+    "powershell": _theme(  # the blue Windows PowerShell console
+        "#012456", "#01306e", "#1d4a85", "#eeedf0", "#8aa2c4", "#f9f1a5",
+        ["#0c0c0c", "#c50f1f", "#13a10e", "#c19c00", "#0037da", "#881798", "#3a96dd", "#cccccc"],
+        ["#767676", "#e74856", "#16c60c", "#f9f1a5", "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2"],
+    ),
+    "cmd": _theme(  # the Command Prompt and MS-DOS: the VGA palette
+        "#000000", "#000000", "#808080", "#c0c0c0", "#808080", "#ffffff",
+        ["#000000", "#800000", "#008000", "#808000", "#000080", "#800080", "#008080", "#c0c0c0"],
+        ["#808080", "#ff0000", "#00ff00", "#ffff00", "#0000ff", "#ff00ff", "#00ffff", "#ffffff"],
+    ),
 }
 
 ALIASES = {"default": "fg", "gray": "bright-black", "grey": "bright-black", "foreground": "fg"}

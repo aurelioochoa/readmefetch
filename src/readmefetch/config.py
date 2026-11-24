@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import badges as badge_mod
-from . import figlet
+from . import figlet, frames, rich
 from . import logos as logo_mod
 from .themes import THEMES, palette, resolve
 
@@ -19,13 +19,37 @@ PLACEHOLDERS = {
     "host": "the `host` setting",
     "cwd": "the `cwd` setting",
     "uptime": "time since `uptime_since`, e.g. '5 years, 6 months'",
-    "repos": "public repositories of `github` (live)",
-    "stars": "stars across those repositories (live)",
-    "followers": "followers of `github` (live)",
-    "contributions": "contributions in the last year (live, needs a token)",
     "year": "the current year",
+    "repos": "public repositories of `github` (live)",
+    "stars": "stars across your own repositories (live)",
+    "forks": "forks of your own repositories (live)",
+    "followers": "followers of `github` (live)",
+    "following": "accounts `github` follows (live)",
+    "gists": "public gists (live)",
+    "joined": "the year the account was made (live)",
+    "contributions": "contributions in the last year (live, needs a token)",
+    "commits": "commits in the last year (live, needs a token)",
+    "prs": "pull requests opened, all time (live)",
+    "issues": "issues opened, all time (live)",
+    "reviews": "pull request reviews in the last year (live, needs a token)",
+    "streak": "days in a row with a contribution, up to today (live, needs a token)",
+    "longest_streak": "the longest such run in the last year (live, needs a token)",
+    "top_language": "your most used language (live)",
+    "languages": "your top languages with their share, in their colours (live)",
+    "langbar": "a bar split by language, like a repository page (live)",
+    "graph": "a bar per week of contributions (live, needs a token)",
+    "heatmap": "GitHub's contribution grid, 4 lines tall (live, needs a token)",
 }
-GITHUB_KEYS = {"repos", "stars", "followers", "contributions"}
+# placeholder -> the raw number stats.fetch() gets for it
+DEPENDS = {
+    "repos": "repos", "stars": "stars", "forks": "forks", "followers": "followers", "following": "following",
+    "gists": "gists", "joined": "joined", "contributions": "contributions", "commits": "commits", "prs": "prs",
+    "issues": "issues", "reviews": "reviews", "streak": "streak", "longest_streak": "longest_streak",
+    "top_language": "languages", "languages": "languages", "langbar": "languages", "graph": "calendar",
+    "heatmap": "calendar",
+}
+GITHUB_KEYS = set(DEPENDS)
+VISUALS = {"languages", "langbar", "graph", "heatmap"}  # drawn, not text: info lines only
 PROMPT_PLACEHOLDERS = ("user", "host", "cwd")
 
 SCOPES = {
@@ -51,8 +75,9 @@ class Prompt:
 
 @dataclass
 class Window:
+    style: str = "macos"  # frames.STYLES
     title: str = "{user}@{host}: {cwd}"
-    buttons: bool = True  # the red, yellow and green dots
+    buttons: bool = True  # the window's control buttons (the red, yellow and green dots on a Mac)
 
 
 @dataclass
@@ -108,6 +133,7 @@ class Config:
     window: Window = field(default_factory=Window)
     cursor: Cursor = field(default_factory=Cursor)
     intro: Intro = field(default_factory=Intro)
+    metrics: rich.Visuals = field(default_factory=rich.Visuals)
     banner: dict = field(default_factory=dict)
     custom_logos: dict = field(default_factory=dict)
     badges: list = field(default_factory=list)  # badges.Badge
@@ -124,8 +150,13 @@ class Config:
     def prompt_values(self) -> dict:
         return {"user": self.user, "host": self.host, "cwd": self.cwd}
 
+    def github_placeholders(self) -> set[str]:
+        texts = list(self.info) + [t for b in self.badges for t in (b.label, b.message)]
+        return {k for text in texts for k in placeholders_in(text)} & GITHUB_KEYS
+
     def needed_stats(self) -> set[str]:
-        return {k for line in self.info for k in placeholders_in(line)} & GITHUB_KEYS
+        """The raw numbers to fetch from GitHub."""
+        return {DEPENDS[k] for k in self.github_placeholders()}
 
     def logo_context(self) -> dict:
         return {"initials": self.initials or (self.user[:1] + self.host[:1]).upper(), "user": self.user,
@@ -189,6 +220,27 @@ def _whole(v) -> int:
         raise ValueError("expected a whole number") from None
 
 
+def _list(conv, size: int | None = None, most: int = 50):
+    def check(v) -> list:
+        if not isinstance(v, list):
+            raise ValueError("expected a list, like [\"a\", \"b\"]")
+        if size is not None and len(v) not in (0, size):
+            raise ValueError(f"expected {size} entries")
+        if len(v) > most:
+            raise ValueError(f"at most {most} entries")
+        return [conv(x) for x in v]
+    return check
+
+
+def _int(lo: int, hi: int):
+    def conv(v) -> int:
+        x = _whole(v)
+        if not lo <= x <= hi:
+            raise ValueError(f"must be between {lo} and {hi}")
+        return x
+    return conv
+
+
 def _choice(options):
     def conv(v) -> str:
         v = _text(v).strip().lower()
@@ -200,11 +252,13 @@ def _choice(options):
 
 TABLES = {
     "prompt": (Prompt, {"format": _text, "user_color": _text, "cwd_color": _text}),
-    "window": (Window, {"title": _text, "buttons": _flag}),
+    "window": (Window, {"style": _choice(frames.STYLES), "title": _text, "buttons": _flag}),
     "cursor": (Cursor, {"style": _choice(CURSORS), "blink": _flag, "period": _number(0.2, 10), "color": _text}),
     "intro": (Intro, {"scope": _choice(SCOPES), "direction": _choice(DIRECTIONS), "speed": _number(1, 2000),
                       "variance": _number(0, 0.95), "stagger": _number(0, 5), "seed": _whole,
                       "command_speed": _number(1, 500)}),
+    "metrics": (rich.Visuals, {"weeks": _int(4, 53), "languages": _int(1, 10), "bar_width": _int(6, 80),
+                               "colors": _list(_text, size=5), "exclude": _list(_text)}),
 }
 TOP_LEVEL = {
     "user", "host", "cwd", "command", "theme", "colors", "logos", "seconds_per_logo", "initials", "info",
@@ -288,14 +342,24 @@ def from_dict(data: dict, path: Path | None = None) -> Config:
             if name not in PLACEHOLDERS:
                 raise ValueError(f"unknown placeholder {{{name}}} in info line {line!r}; "
                                  f"known: {', '.join('{' + p + '}' for p in PLACEHOLDERS)}")
+        for name in rich.shortcodes(line):
+            raise ValueError(f"unknown icon :{name}: in info line {line!r}; see `readmefetch icons`")
+        if "heatmap" in placeholders_in(line) and len(placeholders_in(line.replace("{heatmap}", ""))) + 1 > 1:
+            raise ValueError(f"{{heatmap}} is 4 lines tall and can't share its line with other placeholders: {line!r}")
+    for i, b in enumerate(cfg.badges, 1):
+        for text in (b.label, b.message):
+            for name in placeholders_in(text):
+                if name not in PLACEHOLDERS or name in VISUALS:
+                    raise ValueError(f"[[badge]] {i}: {{{name}}} can't go in a badge; use a number like {{stars}}")
     for where, text in (("[prompt] format", cfg.prompt.format), ("[window] title", cfg.window.title)):
         for name in placeholders_in(text):
             if name not in PROMPT_PLACEHOLDERS:
                 raise ValueError(f"unknown placeholder {{{name}}} in {where}; use {{user}}, {{host}} or {{cwd}}")
     if "uptime" in {p for line in cfg.info for p in placeholders_in(line)} and not cfg.uptime_since:
         raise ValueError("{uptime} needs `uptime_since = YYYY-MM-DD`")
-    if cfg.needed_stats() and not cfg.github:
-        raise ValueError(f"{', '.join('{' + s + '}' for s in sorted(cfg.needed_stats()))} need `github = \"<username>\"`")
+    if cfg.github_placeholders() and not cfg.github:
+        raise ValueError(f"{', '.join('{' + s + '}' for s in sorted(cfg.github_placeholders()))} "
+                         f"need `github = \"<username>\"`")
 
     pal = palette(cfg.theme, cfg.colors)
     for where, color in (("[prompt] user_color", cfg.prompt.user_color), ("[prompt] cwd_color", cfg.prompt.cwd_color),
@@ -355,25 +419,52 @@ def uptime(since: dt.date, today: dt.date) -> str:
     return ", ".join(parts)
 
 
-def values(cfg: Config, stats: dict, today: dt.date) -> dict:
+def values(cfg: Config, stats: dict, today: dt.date, pal: dict | None = None) -> dict:
+    """Every placeholder's value. Numbers from GitHub get thousands separators; the visuals ({graph},
+    {heatmap}, {langbar}, {languages}) are lists of rich spans."""
     v = {"user": cfg.user, "host": cfg.host, "cwd": cfg.cwd, "year": today.year}
     if cfg.uptime_since:
         v["uptime"] = uptime(cfg.uptime_since, today)
-    v.update(stats)
+    for key, value in stats.items():
+        if key in ("calendar", "languages"):
+            continue
+        v[key] = f"{value:,}" if isinstance(value, int) and not isinstance(value, bool) else value
+    v.update(rich.visual_values(stats, cfg.metrics, pal or palette(cfg.theme, cfg.colors)))
     return v
 
 
-def info_rows(cfg: Config, vals: dict) -> list[tuple[str, str] | None]:
-    """Each info line -> (key, value); a line with no 'Key: ' prefix has key ''; '' -> None."""
-    rows = []
+Row = tuple  # (key, value): each a str, or a list of rich spans when the line has icons or visuals
+
+
+def info_rows(cfg: Config, vals: dict) -> list[Row | None]:
+    """Each info line -> (key, value); a line with no 'Key: ' prefix has key ''; '' -> None.
+
+    Plain lines give plain strings. A line with :icons: or visuals gives lists of rich spans, and a
+    {heatmap} line is followed by the blank rows it draws over."""
+    rows: list = []
     for line in cfg.info:
-        text = expand(line, vals)
-        if not text.strip():
+        spans = rich.parse(line, vals)
+        if not rich.width(spans) or (rich.is_plain(spans) and not "".join(s.text for s in spans).strip()):
             rows.append(None)
             continue
-        key, sep, value = text.partition(": ")
-        rows.append((key, value) if sep and key and len(key) <= 24 else ("", text))
+        if rich.is_plain(spans):
+            text = "".join(s.text for s in spans)
+            key, sep, value = text.partition(": ")
+            rows.append((key, value) if sep and key and len(key) <= 24 else ("", text))
+            continue
+        split = rich.split_key(spans)
+        if split and rich.width(split[0]) <= 24:
+            rows.append(split)
+        else:
+            rows.append(("", spans))
+        if any(isinstance(s, rich.Heat) for s in spans):
+            rows += [None] * (rich.HEAT_ROWS - 1)
     return rows
+
+
+def badges_for(cfg: Config, vals: dict) -> list:
+    """The badges with {placeholders} in their label and message filled in."""
+    return [dataclasses.replace(b, label=expand(b.label, vals), message=expand(b.message, vals)) for b in cfg.badges]
 
 
 # --- writing a config back out (the web app's Save and Download) ----------------------
@@ -411,7 +502,8 @@ TABLE_NOTES = {
               "right-to-left, top-to-bottom or bottom-to-top"),
     "colors": "override theme colours",
     "banner": "the `banner` logo: your text in a FIGlet font",
-    "badges": "defaults for the [[badge]] tables below; styles: flat, flat-square, plastic, for-the-badge, pill, terminal",
+    "badges": "defaults for the [[badge]] tables below; `readmefetch badges --help` lists the styles",
+    "metrics": "the GitHub visuals: {graph} {heatmap} {langbar} {languages}",
 }
 OPTIONAL = {"github", "initials", "uptime_since"}  # left out when empty
 
@@ -426,7 +518,7 @@ def dump(data: dict) -> str:
             continue
         out.append(f"{key} = {_toml(data[key], key)}")
     for name in [*TABLES, "colors", "banner", "badges"]:
-        table = {k: v for k, v in (data.get(name) or {}).items() if v is not None}
+        table = {k: v for k, v in (data.get(name) or {}).items() if v is not None and v != []}
         if not table:
             continue
         out += ["", f"# {TABLE_NOTES[name]}", f"[{name}]"]
@@ -499,6 +591,8 @@ output = "readmefetch.svg"
 {github_line}
 uptime_since = {since}          # {{uptime}} counts from here
 
+# Lines can use icons (":python: Lang: Python", see `readmefetch icons`) and, with `github`
+# set, live numbers and graphs: {{stars}} {{prs}} {{top_language}} {{graph}} {{heatmap}} {{langbar}}
 info = [
   "OS: {bio}",
   "Host: {location}",
@@ -530,6 +624,7 @@ blink = true
 # cwd_color = "blue"
 
 # [window]
+# style = "macos"               # tahoe, aqua, platinum, system7, win11, win7, winxp, win95 or none
 # title = "{{user}}@{{host}}: {{cwd}}"
 # buttons = true
 

@@ -17,7 +17,9 @@ import random
 import re
 from xml.sax.saxutils import escape
 
-from . import HOMEPAGE, __version__
+from . import HOMEPAGE, __version__, rich
+from . import frames as chrome_mod
+from . import icons as icon_mod
 from .logos import Logo
 from .themes import resolve
 
@@ -64,15 +66,58 @@ def grid_svg(grid, x0: float, y0: float, pal: dict) -> str:
     return "".join(parts)
 
 
-def line_svg(segments, x0: float, y: float, pal: dict) -> str:
-    """One line on the character grid. segments: (text, colour, css class); spaces are glyphs too."""
+def line_svg(segments, x0: float, y: float, pal: dict, used: set | None = None, clip: list | None = None) -> str:
+    """One line on the character grid. segments: (text or rich spans, colour, css class); spaces are glyphs too.
+
+    `used` collects the icons drawn (their <symbol>s go in <defs>); `clip` counts language bars for unique ids."""
     parts, col = [], 0
-    for text, color, cls in segments:
-        if text.strip():
-            xs = " ".join(n(x0 + (col + i) * CW) for i in range(len(text)))
-            c = f' class="{cls}"' if cls else ""
-            parts.append(f'<text x="{xs}" y="{n(y)}"{c} fill="{resolve(color, pal)}">{escape(text)}</text>')
-        col += len(text)
+    for content, color, cls in segments:
+        for s in ([rich.Text(content)] if isinstance(content, str) else content):
+            x = x0 + col * CW
+            col += s.width
+            if isinstance(s, rich.Text):
+                if not s.text.strip():
+                    continue
+                own = cls.replace("rf-key", "").strip() if s.color else cls
+                xs = " ".join(n(x + i * CW) for i in range(len(s.text)))
+                c = f' class="{own}"' if own else ""
+                parts.append(f'<text x="{xs}" y="{n(y)}"{c} fill="{resolve(s.color or color, pal)}">{escape(s.text)}</text>')
+            elif isinstance(s, rich.Icon):
+                if used is not None:
+                    used.add(s.key)
+                c = ' class="rf-key"' if "rf-key" in cls and not s.color else ""
+                parts.append(f'<use href="#{icon_mod.symbol_id(s.key)}" x="{n(x + CW - 7)}" y="{n(y - 12)}" width="14" '
+                             f'height="14"{c} fill="{resolve(s.color or color, pal)}"/>')
+            elif isinstance(s, rich.Dot):
+                parts.append(f'<circle cx="{n(x + CW / 2)}" cy="{n(y - 4.5)}" r="4" fill="{resolve(s.color, pal)}"/>')
+            elif isinstance(s, rich.Bars):
+                top = max(s.counts) or 1
+                for i, (count, level) in enumerate(zip(s.counts, s.levels)):
+                    bh = max(2, round(15 * count / top)) if count else 2
+                    parts.append(f'<rect x="{n(x + i * CW + 1)}" y="{n(y + 3 - bh)}" width="{n(CW - 2)}" height="{bh}" '
+                                 f'rx="1" fill="{s.colors[level]}"/>')
+            elif isinstance(s, rich.Heat):
+                top_y = y - ASCENT + 2
+                for wk, days in enumerate(s.weeks):
+                    for d, level in enumerate(days):
+                        if level >= 0:
+                            parts.append(f'<rect x="{n(x + wk * s.cell)}" y="{n(top_y + d * s.cell)}" width="{n(s.cell - 2)}" '
+                                         f'height="{n(s.cell - 2)}" rx="2" fill="{s.colors[level]}"/>')
+            elif isinstance(s, rich.LangBar):
+                total = s.width * CW - 2
+                k = len(clip) if clip is not None else 0
+                if clip is not None:
+                    clip.append(k)
+                parts.append(f'<clipPath id="rf-lb{k}"><rect x="{n(x + 1)}" y="{n(y - 9)}" width="{n(total)}" height="8" '
+                             f'rx="4"/></clipPath><g clip-path="url(#rf-lb{k})">')
+                pos = x + 1
+                for i, (_, share, c) in enumerate(s.parts):
+                    seg = total * share
+                    gap = 2 if i < len(s.parts) - 1 else 0
+                    parts.append(f'<rect x="{n(pos)}" y="{n(y - 9)}" width="{n(max(seg - gap, 1))}" height="8" '
+                                 f'fill="{resolve(c, pal)}"/>')
+                    pos += seg
+                parts.append("</g>")
     return "".join(parts)
 
 
@@ -199,12 +244,15 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
     prompt = prompt_segments(cfg, pal)
     prompt_len = sum(len(s[0]) for s in prompt)
     win_title = cfg.window_title()
+    style = cfg.window.style
+    chrome = chrome_mod.metrics(style)
+    x0 = chrome.left + PAD  # left edge of the character grid
 
     # ---- layout --------------------------------------------------------------------
     art_w = max((lg.width for lg in logos), default=0)
     art_h = max((lg.height for lg in logos), default=0)
     info_col = art_w + 3 if logos else 0
-    info_x = PAD + info_col * CW
+    info_x = x0 + info_col * CW
     user, _, host = title.partition("@")
     key_cls = "b rf-key"
     lines: list = [[(user, "accent", key_cls), ("@", "fg", ""), (host, "accent", key_cls)],
@@ -213,23 +261,23 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
         if r is None:
             lines.append([])
         elif r[0]:
-            lines.append([(r[0], "accent", key_cls), (": " + r[1], "fg", "")])
+            lines.append([(r[0], "accent", key_cls), (": ", "fg", ""), (r[1], "fg", "")])
         else:
             lines.append([(r[1], "fg", "")])
     if cfg.color_blocks:
         lines += [[], "blocks", "bright-blocks"]
 
     def line_len(line) -> int:
-        return 24 if isinstance(line, str) else sum(len(s[0]) for s in line)
+        return 24 if isinstance(line, str) else sum(rich.width(s[0]) for s in line)
 
-    width = round(max(info_x + max(line_len(x) for x in lines) * CW + PAD,
-                      2 * PAD + (prompt_len + len(cmd) + 2) * CW,
-                      (len(win_title) * 7.2 + 150) if win_title else 0, 320))
+    width = round(max(info_x + max(line_len(x) for x in lines) * CW + PAD + chrome.right,
+                      x0 + PAD + chrome.right + (prompt_len + len(cmd) + 2) * CW,
+                      chrome_mod.min_width(style, win_title), 320))
     total_rows = max(art_h, len(lines))
-    y0 = BAR + 30  # baseline of the command line
+    y0 = chrome.top + 30  # baseline of the command line
     body_y = y0 + 2 * LH  # baseline of the first output row
     final_y = body_y + total_rows * LH + LH
-    height = round(final_y + PAD)
+    height = round(final_y + PAD + chrome.bottom)
 
     # ---- timing (seconds) ----------------------------------------------------------
     t_type = 0.4
@@ -248,6 +296,14 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
         cells: set[tuple[int, int]] = set()
         for r, line in enumerate(lines):
             cells.update((r, info_col + c) for c in range(line_len(line)))
+            col = 0
+            for content, _, _ in ([] if isinstance(line, str) else line):
+                for s in ([] if isinstance(content, str) else content):
+                    if isinstance(s, rich.Heat):  # the squares below the heatmap's own line
+                        cells.update((r + k, info_col + col + c) for k in range(1, rich.HEAT_ROWS) for c in range(s.width))
+                    col += s.width
+                if isinstance(content, str):
+                    col += len(content)
         if intro.scope == "all" and first:
             for r, row in enumerate(first.still()):
                 cells.update((f_oy + r, f_ox + c) for c, cell in enumerate(row) if cell)
@@ -267,11 +323,12 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
             delay = t_out + (lane - base) * intro.gap
             t_end = max(t_end, delay + dur)
             if intro.horizontal:
-                x, y, w, h = PAD + lo * CW, body_y + lane * LH - ASCENT, count * CW, LH
+                # a pixel wider than the cells, so shapes that end on a fractional pixel (colour blocks) can't peek out
+                x, y, w, h = x0 + lo * CW - 0.5, body_y + lane * LH - ASCENT, count * CW + 1, LH
                 origin = (x + w, y) if intro.direction == "left-to-right" else (x, y)
                 reveal.append((x, y, w, h, origin, "rf-rx", count, delay, dur))
             else:
-                x, y, w, h = PAD + lane * CW, body_y + lo * LH - ASCENT, CW + 0.5, count * LH
+                x, y, w, h = x0 + lane * CW, body_y + lo * LH - ASCENT, CW + 0.5, count * LH
                 origin = (x, y + h) if intro.direction == "top-to-bottom" else (x, y)
                 reveal.append((x, y, w, h, origin, "rf-ry", count, delay, dur))
     typed_art = intro.scope == "all" and first is not None
@@ -292,7 +349,7 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
             credits.append(f"{lg.name}: {lg.credit}")
             a(f"<!-- Logo '{escape(lg.name)}': {escape(lg.credit).replace('--', '-')} -->")
     a(f'<title id="rf-title">{escape(title)}: {escape(cmd)}</title>')
-    desc = "; ".join(f"{r[0]}: {r[1]}" if r[0] else r[1] for r in rows if r)
+    desc = "; ".join(f"{rich.plain(r[0])}: {rich.plain(r[1])}" if r[0] else rich.plain(r[1]) for r in rows if r)
     if credits:
         desc += ". Logo credits: " + "; ".join(credits)
     a(f'<desc id="rf-desc">{escape(desc)}</desc>')
@@ -304,20 +361,12 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
     css.keyframes("rf-show", [(0, "opacity: 0"), (100, "opacity: 1")])
 
     # ---- window ------------------------------------------------------------------
-    a(f'<rect x=".5" y=".5" width="{width - 1}" height="{height - 1}" rx="10" fill="{pal["bg"]}" stroke="{pal["border"]}"/>')
-    a(f'<path d="M.5 {BAR}V10.5a10 10 0 0 1 10-10h{width - 21}a10 10 0 0 1 10 10V{BAR}z" fill="{pal["bar"]}"/>')
-    a(f'<line x1=".5" y1="{BAR}" x2="{width - .5}" y2="{BAR}" stroke="{pal["border"]}"/>')
-    if cfg.window.buttons:
-        for i, c in enumerate(["#ff5f57", "#febc2e", "#28c840"]):
-            a(f'<circle cx="{20 + i * 20}" cy="{BAR / 2}" r="6" fill="{c}"/>')
-    if win_title:
-        a(f'<text x="{width / 2}" y="{BAR / 2 + 4.5}" fill="{pal["dim"]}" text-anchor="middle" style="font-size:12px">'
-          f"{escape(win_title)}</text>")
+    a(chrome_mod.draw(style, width, height, win_title, cfg.window.buttons, pal))
 
     # ---- the command, typed --------------------------------------------------------
-    cmd_x = PAD + prompt_len * CW
+    cmd_x = x0 + prompt_len * CW
     cmd_w = len(cmd) * CW
-    a(line_svg(prompt, PAD, y0, pal))
+    a(line_svg(prompt, x0, y0, pal))
     if cmd:
         a(grid_svg([[(ch, "fg") if ch != " " else None for ch in cmd]], cmd_x, y0, pal))
         a(f'<rect class="rf-cover" x="{n(cmd_x + cmd_w)}" y="{y0 - ASCENT}" width="{n(cmd_w + CW)}" height="{LH}" '
@@ -335,7 +384,7 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
 
     # ---- logos ---------------------------------------------------------------------
     if logos:
-        clip_x, clip_y = PAD - CW, body_y - ASCENT - 6
+        clip_x, clip_y = x0 - CW, body_y - ASCENT - 6
         clip_w, clip_h = (art_w + 2) * CW, art_h * LH + 10
         a(f'<clipPath id="rf-art"><rect x="{n(clip_x)}" y="{n(clip_y)}" width="{n(clip_w)}" height="{n(clip_h)}"/></clipPath>')
         fade_in = "" if typed_art else f' style="animation-delay:{t_out:.2f}s"'
@@ -344,7 +393,7 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
         cyc = f"{period:.2f}s {cycle_at:.2f}s infinite"
         for k, lg in enumerate(logos):
             p0, p1 = 100 * k / count, 100 * (k + 1) / count
-            ox = PAD + (art_w - lg.width) // 2 * CW
+            ox = x0 + (art_w - lg.width) // 2 * CW
             oy = body_y + (art_h - lg.height) // 2 * LH
             ease = min(0.7 / period * 100, (p1 - p0) / 4)
             scene = f"rf-s{k}"
@@ -399,6 +448,8 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
         css.rule(f".rf-key {{ animation: rf-key {period:.2f}s {cycle_at:.2f}s infinite step-end; }}")
         css.keyframes("rf-key", cycle(fr, held=True))
     key_pal = dict(pal, accent=accents[0])
+    used_icons: set[str] = set()
+    bars_drawn: list = []
     for r, line in enumerate(lines):
         y = body_y + r * LH
         if isinstance(line, str):
@@ -407,7 +458,7 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
                            f'height="{LH - (1 if line == "blocks" else 2)}" fill="{pal[prefix + c]}"/>'
                            for i, c in enumerate(BLOCK_NAMES))
         else:
-            part = line_svg(line, info_x, y, key_pal)
+            part = line_svg(line, info_x, y, key_pal, used_icons, bars_drawn)
         if part:
             fade = f' class="ln" style="animation-delay:{t_out + r * 0.04:.2f}s"' if intro.scope == "none" else ""
             a(f"<g{fade}>{part}</g>")
@@ -425,7 +476,7 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
         a("</g>")
 
     # ---- the next prompt, with a blinking cursor -----------------------------------
-    a(f'<g class="ln" style="animation-delay:{t_end:.2f}s">{line_svg(prompt, PAD, final_y, pal)}</g>')
+    a(f'<g class="ln" style="animation-delay:{t_end:.2f}s">{line_svg(prompt, x0, final_y, pal)}</g>')
     a(cursor_rect(cfg, cmd_x, final_y, pal, "rf-cursor"))
     blink = (f", rf-blink {cfg.cursor.period:.2f}s step-end {t_end:.2f}s infinite" if cfg.cursor.blink else "")
     css.rule(f".rf-cursor {{ animation: rf-show .12s ease-out {t_end:.2f}s backwards{blink}; }}")
@@ -433,6 +484,9 @@ def render(cfg, rows: list, logos: list[Logo], pal: dict) -> tuple[str, dict]:
         css.keyframes("rf-blink", [(0, "opacity: 1"), (50, "opacity: 0"), (100, "opacity: 0")])
     css.rule("@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }")
 
+    if used_icons:
+        a("<defs>" + "".join(icon_mod.symbol(k) for k in sorted(used_icons)) + "</defs>")
+        out.insert(style_at, f"<!-- Icons: {escape(icon_mod.credit(used_icons))} -->")
     out.insert(style_at, "<style>\n" + "\n".join(css.rules) + "\n</style>")
     a("</svg>")
     intro_s = max(t_end, cycle_at)

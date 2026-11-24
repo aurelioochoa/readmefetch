@@ -27,6 +27,27 @@ shields.io styles. The gradients of `flat` and `plastic` use the same stop value
 [shields.io's badge-maker](https://github.com/badges/shields/tree/master/badge-maker)
 (CC0-1.0). Text widths come from Verdana's advance widths at 11 px.
 
+## Icons
+
+The `:icons:` in info lines and badges are drawn as SVG shapes copied from free icon
+sets, the same sets Nerd Fonts patches into its fonts. They are pinned to the releases
+below and refreshed by [`tools/vendor_icons.py`](tools/vendor_icons.py). Shapes are
+copied as they are, except that colours are dropped (an icon takes the colour of its
+text) and coordinates are rounded to one or two decimals. Every SVG that uses an icon
+names its set and licence in a comment.
+
+| Icons | Source | Licence |
+| --- | --- | --- |
+| GitHub's own icons (`repo`, `star`, `git-pull-request`, `flame`, ...) | [Octicons](https://github.com/primer/octicons) 19.42.0 © GitHub Inc. | MIT ([licence](src/readmefetch/art/icons/LICENSE.octicons)) |
+| Brand logos (`python`, `docker`, `archlinux`, ...) | [Simple Icons](https://github.com/simple-icons/simple-icons) 16.38.1 | CC0 1.0 ([licence](src/readmefetch/art/icons/LICENSE.simple-icons), [disclaimer](src/readmefetch/art/icons/DISCLAIMER.simple-icons)) |
+| Logos Simple Icons lacks, or licenses separately (`rust`, `php`, `vuejs`, `bash`, `csharp`, `java`, ...) | [Devicon](https://github.com/devicons/devicon) 2.18.0 © konpa and the Devicon contributors | MIT ([licence](src/readmefetch/art/icons/LICENSE.devicon)) |
+| Linux distributions and desktops (`archlinux`, `debian`, `gnome`, ...) | [font-logos](https://github.com/lukas-w/font-logos) v1.4.0 | the Unlicense ([licence](src/readmefetch/art/icons/LICENSE.font-logos)) |
+| `nf-*` names and codepoints (for `:nf-dev-python:` and `print --nerd-font`) | [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) v3.5.1 `glyphnames.json` | MIT ([licence](src/readmefetch/art/icons/LICENSE.nerd-fonts)); no font files are included |
+
+Simple Icons is CC0, but some of its logos carry their owners' own licence (CC BY-SA,
+GPL, non-commercial and others), as its data file records. readmefetch bundles none of
+those: it uses Devicon's drawing of the same logo, or leaves the logo out.
+
 ## Share-alike art
 
 The Candy Box 2 pieces are CC BY-SA 3.0, not MIT. An SVG or GIF that shows `cauldron`
@@ -35,8 +56,9 @@ the artist credited. readmefetch writes that notice into the SVG for you.
 
 ## Trademarks
 
-The operating-system and programming-language logos are trademarks of their owners.
-They are included, as in fastfetch and onefetch, so people can show the tools they use.
+The operating-system, programming-language and brand logos (ASCII art and icons alike)
+are trademarks of their owners. They are included, as in fastfetch, onefetch and Nerd
+Fonts, so people can show the tools they use.
 Their use here does not mean those owners endorse readmefetch.
 
 ## Finding more art
